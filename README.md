@@ -51,10 +51,10 @@ code. SIKE. Here lie the manifestations of my fragmented psyche:
 ## `@opencode.json`
 
 - `experimental.disable_paste_summary`: What the fuck is **[Pasted ~4 lines]** ?
-  My prompt can handle 4 lines of code I think.
+  My prompt can handle 4 lines of text, I think.
 - **Many Providers**: TLDR: GLM 5.1 is underrated.
 - **MCP Server (`zai-mcp-server`)**: Gives vision to all models that don't have
-  it.
+  it. (making multi-modal models is soo hard waah waah).
 
 ## `@tui.json`
 

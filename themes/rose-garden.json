@@ -1,0 +1,231 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "rose0": "#1A1216",
+    "rose1": "#231A1F",
+    "rose2": "#2D2228",
+    "rose3": "#3A2E34",
+    "rose4": "#4A3C42",
+    "rose5": "#F0E4EA",
+    "rose6": "#D8C4CE",
+    "elementBg": "#2A2026",
+    "fg1": "#F2B5C8",
+    "fg2": "#D8CED6",
+    "fg3": "#8E808A",
+    "fg4": "#5A4E56",
+    "rose7": "#E8A0B8",
+    "rose8": "#F2B5C8",
+    "rose9": "#C97B94",
+    "rose10": "#A85B75",
+    "rose11": "#D94F6B",
+    "rose12": "#E8925A",
+    "rose13": "#F0C674",
+    "rose14": "#A3BE8C",
+    "rose15": "#C89BBE",
+    "cyan": "#4ec9b0",
+    "diffGreen": "#1C281C",
+    "diffRed": "#30141C"
+  },
+  "theme": {
+    "primary": {
+      "dark": "rose8",
+      "light": "rose10"
+    },
+    "secondary": {
+      "dark": "rose9",
+      "light": "rose9"
+    },
+    "accent": {
+      "dark": "rose7",
+      "light": "rose7"
+    },
+    "error": {
+      "dark": "rose11",
+      "light": "rose11"
+    },
+    "warning": {
+      "dark": "rose12",
+      "light": "rose12"
+    },
+    "success": {
+      "dark": "rose14",
+      "light": "rose14"
+    },
+    "info": {
+      "dark": "rose8",
+      "light": "rose10"
+    },
+    "text": {
+      "dark": "fg2",
+      "light": "rose0"
+    },
+    "textMuted": {
+      "dark": "fg3",
+      "light": "fg4"
+    },
+    "background": {
+      "dark": "rose0",
+      "light": "rose5"
+    },
+    "backgroundPanel": {
+      "dark": "rose1",
+      "light": "rose6"
+    },
+    "backgroundElement": {
+      "dark": "elementBg",
+      "light": "fg2"
+    },
+    "border": {
+      "dark": "rose3",
+      "light": "rose4"
+    },
+    "borderActive": {
+      "dark": "rose4",
+      "light": "rose3"
+    },
+    "borderSubtle": {
+      "dark": "rose2",
+      "light": "rose3"
+    },
+    "diffAdded": {
+      "dark": "rose14",
+      "light": "rose14"
+    },
+    "diffRemoved": {
+      "dark": "rose11",
+      "light": "rose11"
+    },
+    "diffContext": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "diffHunkHeader": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "diffHighlightAdded": {
+      "dark": "rose14",
+      "light": "rose14"
+    },
+    "diffHighlightRemoved": {
+      "dark": "rose11",
+      "light": "rose11"
+    },
+    "diffAddedBg": {
+      "dark": "diffGreen",
+      "light": "rose6"
+    },
+    "diffRemovedBg": {
+      "dark": "diffRed",
+      "light": "rose6"
+    },
+    "diffContextBg": {
+      "dark": "rose1",
+      "light": "rose6"
+    },
+    "diffLineNumber": {
+      "dark": "fg3",
+      "light": "fg2"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "diffGreen",
+      "light": "rose6"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "diffRed",
+      "light": "rose6"
+    },
+    "markdownText": {
+      "dark": "fg2",
+      "light": "rose0"
+    },
+    "markdownHeading": {
+      "dark": "rose8",
+      "light": "rose10"
+    },
+    "markdownLink": {
+      "dark": "rose9",
+      "light": "rose9"
+    },
+    "markdownLinkText": {
+      "dark": "rose7",
+      "light": "rose7"
+    },
+    "markdownCode": {
+      "dark": "rose14",
+      "light": "rose14"
+    },
+    "markdownBlockQuote": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "markdownEmph": {
+      "dark": "rose12",
+      "light": "rose12"
+    },
+    "markdownStrong": {
+      "dark": "rose15",
+      "light": "rose15"
+    },
+    "markdownHorizontalRule": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "markdownListItem": {
+      "dark": "rose8",
+      "light": "rose10"
+    },
+    "markdownListEnumeration": {
+      "dark": "rose7",
+      "light": "rose7"
+    },
+    "markdownImage": {
+      "dark": "rose9",
+      "light": "rose9"
+    },
+    "markdownImageText": {
+      "dark": "rose7",
+      "light": "rose7"
+    },
+    "markdownCodeBlock": {
+      "dark": "fg2",
+      "light": "rose0"
+    },
+    "syntaxComment": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "syntaxKeyword": {
+      "dark": "rose9",
+      "light": "rose9"
+    },
+    "syntaxFunction": {
+      "dark": "rose8",
+      "light": "rose8"
+    },
+    "syntaxVariable": {
+      "dark": "rose7",
+      "light": "rose7"
+    },
+    "syntaxString": {
+      "dark": "rose14",
+      "light": "rose14"
+    },
+    "syntaxNumber": {
+      "dark": "rose15",
+      "light": "rose15"
+    },
+    "syntaxType": {
+      "dark": "rose7",
+      "light": "rose7"
+    },
+    "syntaxOperator": {
+      "dark": "cyan",
+      "light": "rose9"
+    },
+    "syntaxPunctuation": {
+      "dark": "fg2",
+      "light": "rose0"
+    }
+  }
+}

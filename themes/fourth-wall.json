@@ -1,0 +1,230 @@
+{
+  "$schema": "https://opencode.ai/theme.json",
+  "defs": {
+    "bg0": "#110019",
+    "bg1": "#1a0a24",
+    "bg2": "#230e30",
+    "bg3": "#301540",
+    "bg4": "#3e1e52",
+    "elementBg": "#281236",
+    "fg1": "#d0a5e3",
+    "fg2": "#d4d4d8",
+    "fg3": "#8c8c96",
+    "fg4": "#5a5a64",
+    "accent1": "#865e98",
+    "accent2": "#d0a5e3",
+    "accent3": "#facfff",
+    "coral": "#f88379",
+    "gold": "#ffa500",
+    "red": "#e04040",
+    "green": "#3de88c",
+    "indigo": "#4b0082",
+    "blue": "#4b6bff",
+    "pink": "#e59afe",
+    "cyan": "#5ab4e3",
+    "diffGreen": "#143a26",
+    "diffRed": "#3a0e1c"
+  },
+  "theme": {
+    "primary": {
+      "dark": "accent2",
+      "light": "accent1"
+    },
+    "secondary": {
+      "dark": "accent1",
+      "light": "accent1"
+    },
+    "accent": {
+      "dark": "coral",
+      "light": "coral"
+    },
+    "error": {
+      "dark": "red",
+      "light": "red"
+    },
+    "warning": {
+      "dark": "gold",
+      "light": "gold"
+    },
+    "success": {
+      "dark": "green",
+      "light": "green"
+    },
+    "info": {
+      "dark": "accent2",
+      "light": "accent1"
+    },
+    "text": {
+      "dark": "fg2",
+      "light": "bg1"
+    },
+    "textMuted": {
+      "dark": "fg3",
+      "light": "fg4"
+    },
+    "background": {
+      "dark": "bg0",
+      "light": "accent3"
+    },
+    "backgroundPanel": {
+      "dark": "bg1",
+      "light": "fg1"
+    },
+    "backgroundElement": {
+      "dark": "elementBg",
+      "light": "fg2"
+    },
+    "border": {
+      "dark": "bg3",
+      "light": "bg3"
+    },
+    "borderActive": {
+      "dark": "bg4",
+      "light": "bg4"
+    },
+    "borderSubtle": {
+      "dark": "bg2",
+      "light": "bg2"
+    },
+    "diffAdded": {
+      "dark": "green",
+      "light": "green"
+    },
+    "diffRemoved": {
+      "dark": "red",
+      "light": "red"
+    },
+    "diffContext": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "diffHunkHeader": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "diffHighlightAdded": {
+      "dark": "green",
+      "light": "green"
+    },
+    "diffHighlightRemoved": {
+      "dark": "red",
+      "light": "red"
+    },
+    "diffAddedBg": {
+      "dark": "diffGreen",
+      "light": "fg1"
+    },
+    "diffRemovedBg": {
+      "dark": "diffRed",
+      "light": "fg1"
+    },
+    "diffContextBg": {
+      "dark": "bg1",
+      "light": "fg1"
+    },
+    "diffLineNumber": {
+      "dark": "fg3",
+      "light": "fg2"
+    },
+    "diffAddedLineNumberBg": {
+      "dark": "diffGreen",
+      "light": "fg1"
+    },
+    "diffRemovedLineNumberBg": {
+      "dark": "diffRed",
+      "light": "fg1"
+    },
+    "markdownText": {
+      "dark": "fg2",
+      "light": "bg1"
+    },
+    "markdownHeading": {
+      "dark": "accent2",
+      "light": "accent1"
+    },
+    "markdownLink": {
+      "dark": "accent1",
+      "light": "accent1"
+    },
+    "markdownLinkText": {
+      "dark": "coral",
+      "light": "coral"
+    },
+    "markdownCode": {
+      "dark": "green",
+      "light": "green"
+    },
+    "markdownBlockQuote": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "markdownEmph": {
+      "dark": "gold",
+      "light": "gold"
+    },
+    "markdownStrong": {
+      "dark": "gold",
+      "light": "gold"
+    },
+    "markdownHorizontalRule": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "markdownListItem": {
+      "dark": "accent2",
+      "light": "accent1"
+    },
+    "markdownListEnumeration": {
+      "dark": "coral",
+      "light": "coral"
+    },
+    "markdownImage": {
+      "dark": "accent1",
+      "light": "accent1"
+    },
+    "markdownImageText": {
+      "dark": "coral",
+      "light": "coral"
+    },
+    "markdownCodeBlock": {
+      "dark": "fg2",
+      "light": "bg1"
+    },
+    "syntaxComment": {
+      "dark": "fg3",
+      "light": "fg3"
+    },
+    "syntaxKeyword": {
+      "dark": "accent1",
+      "light": "accent1"
+    },
+    "syntaxFunction": {
+      "dark": "accent2",
+      "light": "accent2"
+    },
+    "syntaxVariable": {
+      "dark": "coral",
+      "light": "coral"
+    },
+    "syntaxString": {
+      "dark": "green",
+      "light": "green"
+    },
+    "syntaxNumber": {
+      "dark": "gold",
+      "light": "gold"
+    },
+    "syntaxType": {
+      "dark": "coral",
+      "light": "coral"
+    },
+    "syntaxOperator": {
+      "dark": "cyan",
+      "light": "accent1"
+    },
+    "syntaxPunctuation": {
+      "dark": "fg2",
+      "light": "bg1"
+    }
+  }
+}

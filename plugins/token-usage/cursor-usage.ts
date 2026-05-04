@@ -1,4 +1,24 @@
+import {readFileSync} from "node:fs";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
+
 import {model_rates} from "./model-rates";
+
+const cursor_session_token_path = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "keys",
+  "cursor",
+);
+
+function read_cursor_session_token(): string {
+  try {
+    return readFileSync(cursor_session_token_path, "utf-8").trim();
+  } catch {
+    return "";
+  }
+}
 
 export type CursorUsage = {tokens: number; cost: number};
 export type DateRange = "current-month" | "all-time";
@@ -63,8 +83,7 @@ const num = (v: string) => {
 export async function get_cursor_usage(
   range: DateRange = "current-month",
 ): Promise<CursorUsage> {
-  const token =
-    "user_01JCRBD43CC7PSJ7T7TXVSWGFE%3A%3AeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhdXRoMHx1c2VyXzAxSkNSQkQ0M0NDN1BTSjdUN1RYVlNXR0ZFIiwidGltZSI6IjE3NzQxMDkwNjMiLCJyYW5kb21uZXNzIjoiMDZhMDRlMTEtZGM2ZC00NjI5IiwiZXhwIjoxNzc5MjkzMDYzLCJpc3MiOiJodHRwczovL2F1dGhlbnRpY2F0aW9uLmN1cnNvci5zaCIsInNjb3BlIjoib3BlbmlkIHByb2ZpbGUgZW1haWwgb2ZmbGluZV9hY2Nlc3MiLCJhdWQiOiJodHRwczovL2N1cnNvci5jb20iLCJ0eXBlIjoid2ViIiwid29ya29zU2Vzc2lvbklkIjoic2Vzc2lvbl8wMUtNOEo3WFZSQ0ZUNUtZUUhFWFYyWlg1RiJ9.V5W2SCiChqb0r-2JPnpNCd5ytmzd61lRfkn1vW1ubZk";
+  const token = read_cursor_session_token();
   if (!token) {
     return {tokens: 0, cost: 0};
   }

@@ -35,7 +35,7 @@ export type SessionSnapshot = {
   real_cost: string;
 };
 
-function real_cost({message}: {message: AssistantMessage}): number {
+function real_cost({message}: {message: AssistantMessage}) {
   const t = message.tokens;
   const key = normalize_model_key({model_id: message.modelID});
   const tier = key ? model_rates[key] : undefined;

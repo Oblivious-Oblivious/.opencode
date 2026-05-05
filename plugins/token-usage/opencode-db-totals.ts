@@ -10,7 +10,7 @@ export type SessionsDbTotal = {
   total_sessions: number;
 };
 
-export function default_opencode_db_path(): string {
+export function default_opencode_db_path() {
   const raw = process.env.OPENCODE_DB;
   if (raw && path.isAbsolute(raw)) {
     return raw;
@@ -21,14 +21,14 @@ export function default_opencode_db_path(): string {
   return path.join(data_root, raw || "opencode.db");
 }
 
-function sql_string_literal(s: string): string {
+function sql_string_literal(s: string) {
   return `'${s.replace(/'/g, "''")}'`;
 }
 
 function message_where_clause(opts: {
   exclude_session_id?: string;
   since?: number;
-}): string {
+}) {
   const parts = [`json_extract(data, '$.role') = 'assistant'`];
   if (opts.exclude_session_id) {
     parts.push(`session_id != ${sql_string_literal(opts.exclude_session_id)}`);

@@ -1,6 +1,5 @@
-import {readFileSync} from "node:fs";
-import path from "node:path";
-import {fileURLToPath} from "node:url";
+import path from "path";
+import {fileURLToPath} from "url";
 
 import {model_rates} from "./model-rates";
 
@@ -12,9 +11,10 @@ const cursor_session_token_path = path.join(
   "cursor",
 );
 
-function read_cursor_session_token(): string {
+async function read_cursor_session_token() {
+  const f = Bun.file(cursor_session_token_path);
   try {
-    return readFileSync(cursor_session_token_path, "utf-8").trim();
+    return (await f.text()).trim();
   } catch {
     return "";
   }
@@ -25,7 +25,7 @@ export type DateRange = "current-month" | "all-time";
 
 const cache = new Map<DateRange, {value: CursorUsage; at: number}>();
 
-export function month_start_ms(): number {
+export function month_start_ms() {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
 }
@@ -40,7 +40,7 @@ const MODEL_PATTERNS: [RegExp, string][] = [
   [/^(gemini-\d+\.\d+-pro)-preview$/, "$1"],
 ];
 
-function normalize_model(raw: string): string | undefined {
+function normalize_model(raw: string) {
   const m = raw.trim().toLowerCase().replace(/"/g, "");
   if (!m || m === "model" || m === "no charge") {
     return undefined;
@@ -60,7 +60,7 @@ function model_cost(
   output: number,
   cache_read: number,
   cache_write: number,
-): number {
+) {
   const tier = model_rates[key];
   if (!tier) {
     return 0;
@@ -80,10 +80,8 @@ const num = (v: string) => {
   return Number.isNaN(n) ? 0 : n;
 };
 
-export async function get_cursor_usage(
-  range: DateRange = "current-month",
-): Promise<CursorUsage> {
-  const token = read_cursor_session_token();
+export async function get_cursor_usage(range: DateRange = "current-month") {
+  const token = await read_cursor_session_token();
   if (!token) {
     return {tokens: 0, cost: 0};
   }

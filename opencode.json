@@ -37,18 +37,10 @@
         "grok-4-20-thinking": {"name": "Grok 4.20 Thinking"}
       }
     },
-    "opencode-go": {
-      "blacklist": [
-        "glm-5",
-        "kimi-k2.5",
-        "mimo-v2-omni",
-        "mimo-v2-pro",
-        "mimo-v2.5",
-        "minimax-m2.5",
-        "qwen3.5-plus"
-      ],
+    "deepseek": {
+      "blacklist": ["deepseek-chat", "deepseek-reasoner"],
       "options": {
-        "apiKey": "{file:keys/opencode-go}"
+        "apiKey": "{file:keys/deepseek}"
       }
     },
     "mimo": {
@@ -72,6 +64,100 @@
           },
           "reasoning": true
         }
+      }
+    },
+    "ollama-cloud": {
+      "blacklist": [
+        "cogito-2.1:671b",
+        "deepseek-v3.1:671b",
+        "deepseek-v3.2",
+        "devstral-2:123b",
+        "devstral-small-2:24b",
+        "gemini-3-flash-preview",
+        "gemma3:12b",
+        "gemma3:27b",
+        "gemma3:4b",
+        "gemma4:31b",
+        "glm-4.6",
+        "glm-4.7",
+        "glm-5",
+        "gpt-oss:120b",
+        "gpt-oss:20b",
+        "kimi-k2-thinking",
+        "kimi-k2:1t",
+        "kimi-k2.5",
+        "minimax-m2",
+        "minimax-m2.1",
+        "minimax-m2.5",
+        "minimax-m2.7",
+        "ministral-3:14b",
+        "ministral-3:3b",
+        "ministral-3:8b",
+        "mistral-large-3:675b",
+        "nemotron-3-nano:30b",
+        "nemotron-3-super",
+        "qwen3-coder-next",
+        "qwen3-coder:480b",
+        "qwen3-next:80b",
+        "qwen3-vl:235b",
+        "qwen3-vl:235b-instruct",
+        "qwen3.5:397b",
+        "rnj-1:8b"
+      ],
+      "options": {
+        "apiKey": "{file:keys/ollama}"
+      }
+    },
+    "opencode-go": {
+      "blacklist": [
+        "glm-5",
+        "kimi-k2.5",
+        "mimo-v2-omni",
+        "mimo-v2-pro",
+        "mimo-v2.5",
+        "minimax-m2.5",
+        "qwen3.5-plus"
+      ],
+      "options": {
+        "apiKey": "{file:keys/opencode-go}"
+      }
+    },
+    "synthetic": {
+      "blacklist": [
+        "hf:deepseek-ai/DeepSeek-R1",
+        "hf:deepseek-ai/DeepSeek-R1-0528",
+        "hf:deepseek-ai/DeepSeek-V3",
+        "hf:deepseek-ai/DeepSeek-V3-0324",
+        "hf:deepseek-ai/DeepSeek-V3.1",
+        "hf:deepseek-ai/DeepSeek-V3.1-Terminus",
+        "hf:deepseek-ai/DeepSeek-V3.2",
+        "hf:meta-llama/Llama-3.1-405B-Instruct",
+        "hf:meta-llama/Llama-3.1-70B-Instruct",
+        "hf:meta-llama/Llama-3.1-8B-Instruct",
+        "hf:meta-llama/Llama-3.3-70B-Instruct",
+        "hf:meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8",
+        "hf:meta-llama/Llama-4-Scout-17B-16E-Instruct",
+        "hf:MiniMaxAI/MiniMax-M2",
+        "hf:MiniMaxAI/MiniMax-M2.1",
+        "hf:MiniMaxAI/MiniMax-M2.5",
+        "hf:moonshotai/Kimi-K2-Instruct-0905",
+        "hf:moonshotai/Kimi-K2-Thinking",
+        "hf:moonshotai/Kimi-K2.5",
+        "hf:nvidia/Kimi-K2.5-NVFP4",
+        "hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4",
+        "hf:openai/gpt-oss-120b",
+        "hf:Qwen/Qwen2.5-Coder-32B-Instruct",
+        "hf:Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "hf:Qwen/Qwen3-235B-A22B-Thinking-2507",
+        "hf:Qwen/Qwen3-Coder-480B-A35B-Instruct",
+        "hf:Qwen/Qwen3.5-397B-A17B",
+        "hf:zai-org/GLM-4.6",
+        "hf:zai-org/GLM-4.7",
+        "hf:zai-org/GLM-4.7-Flash",
+        "hf:zai-org/GLM-5"
+      ],
+      "options": {
+        "apiKey": "{file:keys/synthetic}"
       }
     },
     "zai-coding-plan": {

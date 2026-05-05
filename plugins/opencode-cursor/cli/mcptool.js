@@ -54,6 +54,11 @@ function isCursorPluginEnabledInConfig(config) {
     return true;
   }
   const configObject = config;
+  if (configObject.provider && typeof configObject.provider === "object") {
+    if (CURSOR_PROVIDER_ID in configObject.provider) {
+      return true;
+    }
+  }
   if (Array.isArray(configObject.plugin)) {
     return configObject.plugin.some((entry) => matchesPlugin(entry));
   }
@@ -75,7 +80,7 @@ function shouldEnableCursorPlugin(env = process.env) {
     return {
       enabled,
       configPath,
-      reason: enabled ? "enabled_in_plugin_array_or_legacy" : "disabled_in_plugin_array"
+      reason: enabled ? "enabled" : "disabled_in_plugin_array"
     };
   } catch {
     return {

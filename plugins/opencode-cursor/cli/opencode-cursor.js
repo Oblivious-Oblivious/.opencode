@@ -119,6 +119,173 @@ function formatErrorForUser(error) {
   return output;
 }
 
+// src/utils/logger.ts
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+function getConfiguredLevel() {
+  const env = process.env.CURSOR_ACP_LOG_LEVEL?.toLowerCase();
+  if (env && env in LEVEL_PRIORITY) {
+    return env;
+  }
+  return "info";
+}
+function isSilent() {
+  return process.env.CURSOR_ACP_LOG_SILENT === "1" || process.env.CURSOR_ACP_LOG_SILENT === "true";
+}
+function shouldLog(level) {
+  if (isSilent())
+    return false;
+  const configured = getConfiguredLevel();
+  return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[configured];
+}
+function formatMessage(level, component, message, data) {
+  const timestamp = new Date().toISOString();
+  const prefix = `[cursor-acp:${component}]`;
+  const levelTag = level.toUpperCase().padEnd(5);
+  let formatted = `${prefix} ${levelTag} ${message}`;
+  if (data !== undefined) {
+    if (typeof data === "object") {
+      formatted += ` ${JSON.stringify(data)}`;
+    } else {
+      formatted += ` ${data}`;
+    }
+  }
+  return formatted;
+}
+function isConsoleEnabled() {
+  const consoleEnv = process.env.CURSOR_ACP_LOG_CONSOLE;
+  return consoleEnv === "1" || consoleEnv === "true";
+}
+function ensureLogDir() {
+  if (logDirEnsured)
+    return;
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+    logDirEnsured = true;
+  } catch {
+    logFileError = true;
+  }
+}
+function rotateIfNeeded() {
+  try {
+    const stats = fs.statSync(LOG_FILE);
+    if (stats.size >= MAX_LOG_SIZE) {
+      const backupFile = LOG_FILE + ".1";
+      fs.renameSync(LOG_FILE, backupFile);
+    }
+  } catch {}
+}
+function writeToFile(message) {
+  if (logFileError)
+    return;
+  ensureLogDir();
+  if (logFileError)
+    return;
+  try {
+    rotateIfNeeded();
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(LOG_FILE, `${timestamp} ${message}
+`);
+  } catch {
+    if (!logFileError) {
+      logFileError = true;
+      console.error(`[cursor-acp] Failed to write logs. Using: ${LOG_FILE}`);
+    }
+  }
+}
+function createLogger(component) {
+  return {
+    debug: (message, data) => {
+      if (!shouldLog("debug"))
+        return;
+      const formatted = formatMessage("debug", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    },
+    info: (message, data) => {
+      if (!shouldLog("info"))
+        return;
+      const formatted = formatMessage("info", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    },
+    warn: (message, data) => {
+      if (!shouldLog("warn"))
+        return;
+      const formatted = formatMessage("warn", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    },
+    error: (message, data) => {
+      if (!shouldLog("error"))
+        return;
+      const formatted = formatMessage("error", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    }
+  };
+}
+var LOG_DIR, LOG_FILE, MAX_LOG_SIZE, LEVEL_PRIORITY, logDirEnsured = false, logFileError = false;
+var init_logger = __esm(() => {
+  LOG_DIR = path.join(os.homedir(), ".opencode-cursor");
+  LOG_FILE = path.join(LOG_DIR, "plugin.log");
+  MAX_LOG_SIZE = 5 * 1024 * 1024;
+  LEVEL_PRIORITY = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3
+  };
+});
+
+// src/utils/binary.ts
+import { existsSync as fsExistsSync } from "fs";
+import * as pathModule from "path";
+import { homedir as osHomedir } from "os";
+function resolveCursorAgentBinary(deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const checkExists = deps.existsSync ?? fsExistsSync;
+  const home = (deps.homedir ?? osHomedir)();
+  const envOverride = env.CURSOR_AGENT_EXECUTABLE;
+  if (envOverride && envOverride.length > 0) {
+    return envOverride;
+  }
+  if (platform === "win32") {
+    const pathJoin = pathModule.win32.join;
+    const localAppData = env.LOCALAPPDATA ?? pathJoin(home, "AppData", "Local");
+    const knownPath = pathJoin(localAppData, "cursor-agent", "cursor-agent.cmd");
+    if (checkExists(knownPath)) {
+      return knownPath;
+    }
+    log.warn("cursor-agent not found at known Windows path, falling back to PATH", { checkedPath: knownPath });
+    return "cursor-agent.cmd";
+  }
+  const knownPaths = [
+    pathModule.join(home, ".cursor-agent", "cursor-agent"),
+    "/usr/local/bin/cursor-agent"
+  ];
+  for (const p of knownPaths) {
+    if (checkExists(p)) {
+      return p;
+    }
+  }
+  log.warn("cursor-agent not found at known paths, falling back to PATH", { checkedPaths: knownPaths });
+  return "cursor-agent";
+}
+var log;
+var init_binary = __esm(() => {
+  init_logger();
+  log = createLogger("binary");
+});
+
 // src/cli/model-discovery.ts
 import { execFileSync } from "child_process";
 function parseCursorModelsOutput(output) {
@@ -142,9 +309,9 @@ function parseCursorModelsOutput(output) {
   return models;
 }
 function discoverModelsFromCursorAgent() {
-  const raw = execFileSync("cursor-agent", ["models"], {
+  const raw = execFileSync(resolveCursorAgentBinary(), ["models"], {
     encoding: "utf8",
-    killSignal: "SIGTERM",
+    ...process.platform !== "win32" && { killSignal: "SIGTERM" },
     stdio: ["ignore", "pipe", "pipe"],
     timeout: MODEL_DISCOVERY_TIMEOUT_MS
   });
@@ -179,23 +346,26 @@ function fallbackModels() {
   ];
 }
 var MODEL_DISCOVERY_TIMEOUT_MS = 5000;
-var init_model_discovery = () => {};
+var init_model_discovery = __esm(() => {
+  init_binary();
+});
 
 // src/cli/opencode-cursor.ts
 init_model_discovery();
+init_binary();
 import { execFileSync as execFileSync2 } from "child_process";
 import {
   copyFileSync,
-  existsSync,
+  existsSync as existsSync2,
   lstatSync,
-  mkdirSync,
+  mkdirSync as mkdirSync2,
   readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync
 } from "fs";
-import { homedir } from "os";
-import { basename, dirname, join, resolve } from "path";
+import { homedir as homedir2 } from "os";
+import { basename, dirname, join as join3, resolve } from "path";
 import { fileURLToPath } from "url";
 
 // src/models/variants.ts
@@ -516,7 +686,7 @@ function checkBun() {
 }
 function checkCursorAgent() {
   try {
-    const output = execFileSync2("cursor-agent", ["--version"], { encoding: "utf8" }).trim();
+    const output = execFileSync2(resolveCursorAgentBinary(), ["--version"], { encoding: "utf8" }).trim();
     const version = output.split(`
 `)[0] || "installed";
     return { name: "cursor-agent", passed: true, message: version };
@@ -530,7 +700,7 @@ function checkCursorAgent() {
 }
 function checkCursorAgentLogin() {
   try {
-    execFileSync2("cursor-agent", ["models"], {
+    execFileSync2(resolveCursorAgentBinary(), ["models"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 3000
@@ -567,7 +737,7 @@ function isNpmDirectInstalled(config) {
 }
 function checkPluginFile(pluginPath, config) {
   try {
-    if (!existsSync(pluginPath)) {
+    if (!existsSync2(pluginPath)) {
       if (isNpmDirectInstalled(config)) {
         return {
           name: "Plugin file",
@@ -597,7 +767,7 @@ function checkPluginFile(pluginPath, config) {
 }
 function checkProviderConfig(configPath) {
   try {
-    if (!existsSync(configPath)) {
+    if (!existsSync2(configPath)) {
       return {
         name: "Provider config",
         passed: false,
@@ -625,8 +795,8 @@ function checkProviderConfig(configPath) {
 }
 function checkAiSdk(opencodeDir) {
   try {
-    const sdkPath = join(opencodeDir, "node_modules", "@ai-sdk", "openai-compatible");
-    if (existsSync(sdkPath)) {
+    const sdkPath = join3(opencodeDir, "node_modules", "@ai-sdk", "openai-compatible");
+    if (existsSync2(sdkPath)) {
       return { name: "AI SDK", passed: true, message: "@ai-sdk/openai-compatible installed" };
     }
     return {
@@ -749,24 +919,24 @@ function getConfigHome() {
   const xdg = process.env.XDG_CONFIG_HOME;
   if (xdg && xdg.length > 0)
     return xdg;
-  return join(homedir(), ".config");
+  return join3(homedir2(), ".config");
 }
 function resolvePaths(options) {
-  const opencodeDir = join(getConfigHome(), "opencode");
-  const configPath = resolve(options.config || join(opencodeDir, "opencode.json"));
-  const pluginDir = resolve(options.pluginDir || join(opencodeDir, "plugin"));
-  const pluginPath = join(pluginDir, `${PROVIDER_ID}.js`);
+  const opencodeDir = join3(getConfigHome(), "opencode");
+  const configPath = resolve(options.config || join3(opencodeDir, "opencode.json"));
+  const pluginDir = resolve(options.pluginDir || join3(opencodeDir, "plugin"));
+  const pluginPath = join3(pluginDir, `${PROVIDER_ID}.js`);
   return { opencodeDir, configPath, pluginDir, pluginPath };
 }
 function resolvePluginSource() {
   const currentFile = fileURLToPath(import.meta.url);
   const currentDir = dirname(currentFile);
   const candidates = [
-    join(currentDir, "plugin-entry.js"),
-    join(currentDir, "..", "plugin-entry.js")
+    join3(currentDir, "plugin-entry.js"),
+    join3(currentDir, "..", "plugin-entry.js")
   ];
   for (const candidate of candidates) {
-    if (existsSync(candidate)) {
+    if (existsSync2(candidate)) {
       return candidate;
     }
   }
@@ -776,7 +946,7 @@ function isErrnoException(error) {
   return typeof error === "object" && error !== null && "code" in error;
 }
 function readConfig(configPath) {
-  if (!existsSync(configPath)) {
+  if (!existsSync2(configPath)) {
     return { plugin: [], provider: {} };
   }
   let raw;
@@ -795,8 +965,8 @@ function readConfig(configPath) {
   }
 }
 function writeConfig(configPath, config, noBackup, silent = false) {
-  mkdirSync(dirname(configPath), { recursive: true });
-  if (!noBackup && existsSync(configPath)) {
+  mkdirSync2(dirname(configPath), { recursive: true });
+  if (!noBackup && existsSync2(configPath)) {
     const backupPath = `${configPath}.bak.${new Date().toISOString().replace(/[:]/g, "-")}`;
     copyFileSync(configPath, backupPath);
     if (!silent) {
@@ -827,7 +997,7 @@ function ensureProvider(config, baseUrl) {
   };
 }
 function ensurePluginLink(pluginSource, pluginPath, copyMode) {
-  mkdirSync(dirname(pluginPath), { recursive: true });
+  mkdirSync2(dirname(pluginPath), { recursive: true });
   rmSync(pluginPath, { force: true });
   if (copyMode) {
     copyFileSync(pluginSource, pluginPath);
@@ -959,7 +1129,7 @@ function commandInstall(options) {
   const copyMode = options.copy === true;
   const pluginSource = resolvePluginSource();
   if (!options.dryRun) {
-    mkdirSync(opencodeDir, { recursive: true });
+    mkdirSync2(opencodeDir, { recursive: true });
     ensurePluginLink(pluginSource, pluginPath, copyMode);
   }
   const config = readConfig(configPath);
@@ -1049,7 +1219,7 @@ var NPM_PACKAGE = "@rama_nigg/open-cursor";
 function commandUninstall(options) {
   const { configPath, pluginPath } = resolvePaths(options);
   rmSync(pluginPath, { force: true });
-  if (existsSync(configPath)) {
+  if (existsSync2(configPath)) {
     const config = readConfig(configPath);
     if (Array.isArray(config.plugin)) {
       config.plugin = config.plugin.filter((name) => {
@@ -1071,7 +1241,7 @@ function commandUninstall(options) {
 function getStatusResult(configPath, pluginPath) {
   let pluginType = "missing";
   let pluginTarget;
-  if (existsSync(pluginPath)) {
+  if (existsSync2(pluginPath)) {
     try {
       const stat = lstatSync(pluginPath);
       pluginType = stat.isSymbolicLink() ? "symlink" : "file";
@@ -1094,7 +1264,7 @@ function getStatusResult(configPath, pluginPath) {
   let providerEnabled = false;
   let baseUrl = "http://127.0.0.1:32124/v1";
   let modelCount = 0;
-  if (existsSync(configPath)) {
+  if (existsSync2(configPath)) {
     config = readConfig(configPath);
     const provider = config.provider?.["cursor-acp"];
     providerEnabled = !!provider;
@@ -1106,8 +1276,8 @@ function getStatusResult(configPath, pluginPath) {
     config = undefined;
   }
   const opencodeDir = dirname(configPath);
-  const sdkPath = join(opencodeDir, "node_modules", "@ai-sdk", "openai-compatible");
-  const aiSdkInstalled = existsSync(sdkPath);
+  const sdkPath = join3(opencodeDir, "node_modules", "@ai-sdk", "openai-compatible");
+  const aiSdkInstalled = existsSync2(sdkPath);
   let installMethod = "none";
   if (pluginType !== "missing") {
     installMethod = "symlink";

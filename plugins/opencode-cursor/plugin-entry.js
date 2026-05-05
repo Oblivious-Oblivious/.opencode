@@ -53,6 +53,11 @@ function isCursorPluginEnabledInConfig(config) {
     return true;
   }
   const configObject = config;
+  if (configObject.provider && typeof configObject.provider === "object") {
+    if (CURSOR_PROVIDER_ID in configObject.provider) {
+      return true;
+    }
+  }
   if (Array.isArray(configObject.plugin)) {
     return configObject.plugin.some((entry) => matchesPlugin(entry));
   }
@@ -74,7 +79,7 @@ function shouldEnableCursorPlugin(env = process.env) {
     return {
       enabled,
       configPath,
-      reason: enabled ? "enabled_in_plugin_array_or_legacy" : "disabled_in_plugin_array"
+      reason: enabled ? "enabled" : "disabled_in_plugin_array"
     };
   } catch {
     return {
@@ -462,11 +467,52 @@ function formatErrorForUser(error) {
   return output;
 }
 
+// src/utils/binary.ts
+import { existsSync as fsExistsSync } from "fs";
+import * as pathModule from "path";
+import { homedir as osHomedir } from "os";
+function resolveCursorAgentBinary(deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const checkExists = deps.existsSync ?? fsExistsSync;
+  const home = (deps.homedir ?? osHomedir)();
+  const envOverride = env.CURSOR_AGENT_EXECUTABLE;
+  if (envOverride && envOverride.length > 0) {
+    return envOverride;
+  }
+  if (platform === "win32") {
+    const pathJoin = pathModule.win32.join;
+    const localAppData = env.LOCALAPPDATA ?? pathJoin(home, "AppData", "Local");
+    const knownPath = pathJoin(localAppData, "cursor-agent", "cursor-agent.cmd");
+    if (checkExists(knownPath)) {
+      return knownPath;
+    }
+    log.warn("cursor-agent not found at known Windows path, falling back to PATH", { checkedPath: knownPath });
+    return "cursor-agent.cmd";
+  }
+  const knownPaths = [
+    pathModule.join(home, ".cursor-agent", "cursor-agent"),
+    "/usr/local/bin/cursor-agent"
+  ];
+  for (const p of knownPaths) {
+    if (checkExists(p)) {
+      return p;
+    }
+  }
+  log.warn("cursor-agent not found at known paths, falling back to PATH", { checkedPaths: knownPaths });
+  return "cursor-agent";
+}
+var log;
+var init_binary = __esm(() => {
+  init_logger();
+  log = createLogger("binary");
+});
+
 // src/auth.ts
 import { spawn } from "child_process";
 import { existsSync as existsSync3 } from "fs";
 import { homedir as homedir3, platform } from "os";
-import { join as join3 } from "path";
+import { join as join4 } from "path";
 function getHomeDir() {
   const override = process.env.CURSOR_ACP_HOME_DIR;
   if (override && override.length > 0) {
@@ -482,18 +528,18 @@ async function pollForAuthFile(timeoutMs = AUTH_POLL_TIMEOUT, intervalMs = AUTH_
       const elapsed = Date.now() - startTime;
       for (const authPath of possiblePaths) {
         if (existsSync3(authPath)) {
-          log.debug("Auth file detected", { path: authPath });
+          log2.debug("Auth file detected", { path: authPath });
           resolve2(true);
           return;
         }
       }
-      log.debug("Polling for auth file", {
+      log2.debug("Polling for auth file", {
         checkedPaths: possiblePaths,
         elapsed: `${elapsed}ms`,
         timeout: `${timeoutMs}ms`
       });
       if (elapsed >= timeoutMs) {
-        log.debug("Auth file polling timed out");
+        log2.debug("Auth file polling timed out");
         resolve2(false);
         return;
       }
@@ -504,9 +550,10 @@ async function pollForAuthFile(timeoutMs = AUTH_POLL_TIMEOUT, intervalMs = AUTH_
 }
 async function startCursorOAuth() {
   return new Promise((resolve2, reject) => {
-    log.info("Starting cursor-cli login process");
-    const proc = spawn("cursor-agent", ["login"], {
-      stdio: ["pipe", "pipe", "pipe"]
+    log2.info("Starting cursor-cli login process");
+    const proc = spawn(resolveCursorAgentBinary(), ["login"], {
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: process.platform === "win32"
     });
     let stdout = "";
     let stderr = "";
@@ -530,9 +577,9 @@ async function startCursorOAuth() {
       const url = extractUrl();
       if (url && !urlExtracted) {
         urlExtracted = true;
-        log.debug("Captured stdout", { length: stdout.length });
-        log.debug("Extracted URL", { url: url.substring(0, 50) + "..." });
-        log.info("Got login URL, waiting for browser auth");
+        log2.debug("Captured stdout", { length: stdout.length });
+        log2.debug("Extracted URL", { url: url.substring(0, 50) + "..." });
+        log2.info("Got login URL, waiting for browser auth");
         resolve2({
           url,
           instructions: "Click 'Continue with Cursor' in your browser to authenticate",
@@ -546,26 +593,26 @@ async function startCursorOAuth() {
                 }
               };
               proc.on("close", async (code) => {
-                log.debug("Login process closed", { code });
+                log2.debug("Login process closed", { code });
                 if (code === 0) {
-                  log.info("Process exited successfully, polling for auth file...");
+                  log2.info("Process exited successfully, polling for auth file...");
                   const isAuthenticated = await pollForAuthFile();
                   if (isAuthenticated) {
-                    log.info("Authentication successful");
+                    log2.info("Authentication successful");
                     resolveOnce({
                       type: "success",
                       provider: "cursor-acp",
                       key: "cursor-auth"
                     });
                   } else {
-                    log.warn("Auth file not found after polling");
+                    log2.warn("Auth file not found after polling");
                     resolveOnce({
                       type: "failed",
                       error: "Authentication was not completed. Please try again."
                     });
                   }
                 } else {
-                  log.warn("Login process failed", { code });
+                  log2.warn("Login process failed", { code });
                   resolveOnce({
                     type: "failed",
                     error: stderr ? stripAnsi(stderr) : `Authentication failed with code ${code}`
@@ -573,7 +620,7 @@ async function startCursorOAuth() {
                 }
               });
               setTimeout(() => {
-                log.warn("Authentication timed out after 5 minutes");
+                log2.warn("Authentication timed out after 5 minutes");
                 proc.kill();
                 resolveOnce({
                   type: "failed",
@@ -593,7 +640,7 @@ async function startCursorOAuth() {
       if (elapsed >= URL_EXTRACTION_TIMEOUT) {
         proc.kill();
         const errorMsg = stderr ? stripAnsi(stderr) : "No login URL received within timeout";
-        log.error("Failed to extract login URL", { error: errorMsg, elapsed: `${elapsed}ms` });
+        log2.error("Failed to extract login URL", { error: errorMsg, elapsed: `${elapsed}ms` });
         reject(new Error(`Failed to get login URL: ${errorMsg}`));
         return;
       }
@@ -609,11 +656,11 @@ function verifyCursorAuth() {
   const possiblePaths = getPossibleAuthPaths();
   for (const authPath of possiblePaths) {
     if (existsSync3(authPath)) {
-      log.debug("Auth file found", { path: authPath });
+      log2.debug("Auth file found", { path: authPath });
       return true;
     }
   }
-  log.debug("No auth file found", { checkedPaths: possiblePaths });
+  log2.debug("No auth file found", { checkedPaths: possiblePaths });
   return false;
 }
 function getPossibleAuthPaths() {
@@ -623,23 +670,23 @@ function getPossibleAuthPaths() {
   const authFiles = ["cli-config.json", "auth.json"];
   if (isDarwin) {
     for (const file of authFiles) {
-      paths.push(join3(home, ".cursor", file));
+      paths.push(join4(home, ".cursor", file));
     }
     for (const file of authFiles) {
-      paths.push(join3(home, ".config", "cursor", file));
+      paths.push(join4(home, ".config", "cursor", file));
     }
   } else {
     for (const file of authFiles) {
-      paths.push(join3(home, ".config", "cursor", file));
+      paths.push(join4(home, ".config", "cursor", file));
     }
     const xdgConfig = process.env.XDG_CONFIG_HOME;
-    if (xdgConfig && xdgConfig !== join3(home, ".config")) {
+    if (xdgConfig && xdgConfig !== join4(home, ".config")) {
       for (const file of authFiles) {
-        paths.push(join3(xdgConfig, "cursor", file));
+        paths.push(join4(xdgConfig, "cursor", file));
       }
     }
     for (const file of authFiles) {
-      paths.push(join3(home, ".cursor", file));
+      paths.push(join4(home, ".cursor", file));
     }
   }
   return paths;
@@ -653,10 +700,11 @@ function getAuthFilePath() {
   }
   return possiblePaths[0];
 }
-var log, AUTH_POLL_INTERVAL = 2000, AUTH_POLL_TIMEOUT, URL_EXTRACTION_TIMEOUT = 1e4;
+var log2, AUTH_POLL_INTERVAL = 2000, AUTH_POLL_TIMEOUT, URL_EXTRACTION_TIMEOUT = 1e4;
 var init_auth = __esm(() => {
   init_logger();
-  log = createLogger("auth");
+  init_binary();
+  log2 = createLogger("auth");
   AUTH_POLL_TIMEOUT = 5 * 60 * 1000;
 });
 
@@ -852,7 +900,7 @@ var createChunk = (id, created, model, delta) => ({
 var init_openai_sse = () => {};
 
 // src/streaming/parser.ts
-var log2, parseStreamJsonLine = (line) => {
+var log3, parseStreamJsonLine = (line) => {
   const trimmed = line.trim();
   if (!trimmed) {
     return null;
@@ -864,13 +912,13 @@ var log2, parseStreamJsonLine = (line) => {
     }
     return parsed;
   } catch {
-    log2.debug("Failed to parse NDJSON line", { line: trimmed.substring(0, 100) });
+    log3.debug("Failed to parse NDJSON line", { line: trimmed.substring(0, 100) });
     return null;
   }
 };
 var init_parser = __esm(() => {
   init_logger();
-  log2 = createLogger("streaming:parser");
+  log3 = createLogger("streaming:parser");
 });
 
 // src/usage.ts
@@ -960,7 +1008,7 @@ class RequestPerf {
       phases[this.markers[i].name] = this.markers[i].ts - this.markers[i - 1].ts;
     }
     const total = this.markers[this.markers.length - 1].ts - start;
-    log3.debug("Request timing", { requestId: this.requestId, total, phases });
+    log4.debug("Request timing", { requestId: this.requestId, total, phases });
   }
   elapsed() {
     return this.markers.length > 0 ? Date.now() - this.markers[0].ts : 0;
@@ -969,16 +1017,16 @@ class RequestPerf {
     return this.markers;
   }
 }
-var log3;
+var log4;
 var init_perf = __esm(() => {
   init_logger();
-  log3 = createLogger("perf");
+  log4 = createLogger("perf");
 });
 
 // src/proxy/prompt-builder.ts
 import { appendFileSync as appendFileSync2, existsSync as existsSync4, mkdirSync as mkdirSync2 } from "node:fs";
 import { homedir as homedir4 } from "node:os";
-import { join as join4 } from "node:path";
+import { join as join5 } from "node:path";
 function ensureLogDir2() {
   try {
     if (!existsSync4(DEBUG_LOG_DIR)) {
@@ -994,7 +1042,7 @@ function debugLogToFile(message, data) {
 `;
     appendFileSync2(DEBUG_LOG_FILE, logLine);
   } catch (err) {
-    log4.debug(message, data);
+    log5.debug(message, data);
   }
 }
 function buildPromptFromMessages(messages, tools, subagentNames = []) {
@@ -1115,12 +1163,12 @@ ${toolDescs}`);
   });
   return finalPrompt;
 }
-var log4, DEBUG_LOG_DIR, DEBUG_LOG_FILE;
+var log5, DEBUG_LOG_DIR, DEBUG_LOG_FILE;
 var init_prompt_builder = __esm(() => {
   init_logger();
-  log4 = createLogger("proxy:prompt-builder");
-  DEBUG_LOG_DIR = join4(homedir4(), ".config", "opencode", "logs");
-  DEBUG_LOG_FILE = join4(DEBUG_LOG_DIR, "tool-loop-debug.log");
+  log5 = createLogger("proxy:prompt-builder");
+  DEBUG_LOG_DIR = join5(homedir4(), ".config", "opencode", "logs");
+  DEBUG_LOG_FILE = join5(DEBUG_LOG_DIR, "tool-loop-debug.log");
 });
 
 // src/proxy/tool-loop.ts
@@ -1148,7 +1196,7 @@ function extractOpenAiToolCall(event, allowedToolNames) {
   const resolvedName = resolveAllowedToolName(name, allowedToolNames);
   if (resolvedName) {
     if (args === undefined && event.subtype === "started") {
-      log5.debug("Tool call args extraction returned undefined", {
+      log6.debug("Tool call args extraction returned undefined", {
         toolName: name,
         subtype: event.subtype ?? "none",
         payloadKeys: Object.entries(event.tool_call || {}).map(([k, v]) => `${k}:[${isRecord(v) ? Object.keys(v).join(",") : typeof v}]`),
@@ -1168,7 +1216,7 @@ function extractOpenAiToolCall(event, allowedToolNames) {
       }
     };
   }
-  log5.debug("Tool call not in allowlist; passing through to cursor-agent", {
+  log6.debug("Tool call not in allowlist; passing through to cursor-agent", {
     name,
     normalized: normalizeAliasKey(name),
     allowedToolCount: allowedToolNames.size
@@ -1317,10 +1365,10 @@ function toOpenAiArguments(args) {
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-var log5, TOOL_NAME_ALIASES;
+var log6, TOOL_NAME_ALIASES;
 var init_tool_loop = __esm(() => {
   init_logger();
-  log5 = createLogger("proxy:tool-loop");
+  log6 = createLogger("proxy:tool-loop");
   TOOL_NAME_ALIASES = new Map([
     ["runcommand", "bash"],
     ["executecommand", "bash"],
@@ -1434,7 +1482,7 @@ class OpenCodeToolDiscovery {
         const mcpTools = await this.tryListMcpTools();
         tools = tools.concat(mcpTools);
       } catch (err) {
-        log6.debug("SDK tool.list failed, will try CLI", { error: String(err) });
+        log7.debug("SDK tool.list failed, will try CLI", { error: String(err) });
       }
     }
     if (tools.length === 0 && this.executorPref !== "sdk") {
@@ -1446,10 +1494,10 @@ class OpenCodeToolDiscovery {
         if (parsed?.data?.tools?.length) {
           tools = parsed.data.tools.map((t) => this.normalize(t, "cli"));
         } else {
-          log6.debug("CLI tool list failed", { status: res.status, stderr: res.stderr });
+          log7.debug("CLI tool list failed", { status: res.status, stderr: res.stderr });
         }
       } catch (err) {
-        log6.debug("CLI tool list error", { error: String(err) });
+        log7.debug("CLI tool list error", { error: String(err) });
       }
     }
     const map = new Map;
@@ -1485,7 +1533,7 @@ class OpenCodeToolDiscovery {
         return [];
       return mcpList.data.tools.map((t) => this.normalize(t, "mcp"));
     } catch (err) {
-      log6.debug("MCP tool discovery skipped", { error: String(err) });
+      log7.debug("MCP tool discovery skipped", { error: String(err) });
       return [];
     }
   }
@@ -1506,11 +1554,11 @@ class OpenCodeToolDiscovery {
     return null;
   }
 }
-var log6;
+var log7;
 var init_discovery = __esm(() => {
   init_logger();
   init_strip_ansi();
-  log6 = createLogger("tools:discovery");
+  log7 = createLogger("tools:discovery");
 });
 
 // src/tools/schema.ts
@@ -1567,10 +1615,10 @@ function describeTool(t) {
   const base = t.description || "OpenCode tool";
   return base.length > 400 ? base.slice(0, 400) : base;
 }
-var log7;
+var log8;
 var init_schema = __esm(() => {
   init_logger();
-  log7 = createLogger("tools:schema");
+  log8 = createLogger("tools:schema");
 });
 
 // src/tools/router.ts
@@ -1595,18 +1643,18 @@ class ToolRouter {
     }
     const tool = this.ctx.toolsByName.get(name);
     if (!tool) {
-      log8.warn("Unknown tool call", { name });
+      log9.warn("Unknown tool call", { name });
       return this.buildResult(meta, callId, name, { status: "error", error: `Unknown tool ${name}` });
     }
     const args = this.extractArgs(event);
-    log8.debug("Executing tool", { name, toolId: tool.id });
+    log9.debug("Executing tool", { name, toolId: tool.id });
     const t0 = Date.now();
     const result = await this.ctx.execute(tool.id, args);
     const elapsed = Date.now() - t0;
     if (result.status === "error") {
-      log8.warn("Tool execution returned error", { name, error: result.error, elapsed });
+      log9.warn("Tool execution returned error", { name, error: result.error, elapsed });
     } else {
-      log8.debug("Tool execution completed", { name, toolId: tool.id, elapsed });
+      log9.debug("Tool execution completed", { name, toolId: tool.id, elapsed });
     }
     return this.buildResult(meta, callId, name, result);
   }
@@ -1655,10 +1703,10 @@ class ToolRouter {
     };
   }
 }
-var log8;
+var log9;
 var init_router = __esm(() => {
   init_logger();
-  log8 = createLogger("tools:router");
+  log9 = createLogger("tools:router");
 });
 
 // src/tools/skills/loader.ts
@@ -1759,9 +1807,9 @@ function parseCursorModelsOutput(output) {
   return models;
 }
 function discoverModelsFromCursorAgent() {
-  const raw = execFileSync("cursor-agent", ["models"], {
+  const raw = execFileSync(resolveCursorAgentBinary(), ["models"], {
     encoding: "utf8",
-    killSignal: "SIGTERM",
+    ...process.platform !== "win32" && { killSignal: "SIGTERM" },
     stdio: ["ignore", "pipe", "pipe"],
     timeout: MODEL_DISCOVERY_TIMEOUT_MS
   });
@@ -1796,7 +1844,9 @@ function fallbackModels() {
   ];
 }
 var MODEL_DISCOVERY_TIMEOUT_MS = 5000;
-var init_model_discovery = () => {};
+var init_model_discovery = __esm(() => {
+  init_binary();
+});
 
 // src/models/sync.ts
 import {
@@ -1887,18 +1937,18 @@ async function autoRefreshModels(deps = {}) {
     resolvedDeps.log.debug("Model auto-refresh failed", { error: String(err) });
   }
 }
-var log9, PROVIDER_ID = "cursor-acp", defaultDeps;
+var log10, PROVIDER_ID = "cursor-acp", defaultDeps;
 var init_sync = __esm(() => {
   init_model_discovery();
   init_plugin_toggle();
   init_logger();
-  log9 = createLogger("model-sync");
+  log10 = createLogger("model-sync");
   defaultDeps = {
     defer: () => Promise.resolve(),
     discoverModels: discoverModelsFromCursorAgent,
     env: process.env,
     existsSync: nodeExistsSync,
-    log: log9,
+    log: log10,
     readFileSync: nodeReadFileSync,
     writeFileSync: nodeWriteFileSync
   };
@@ -1959,7 +2009,7 @@ function readMcpConfigs(deps = {}) {
         timeout: typeof e.timeout === "number" ? e.timeout : undefined
       });
     } else {
-      log10.debug("Skipping unrecognised MCP config entry", { name, type: e.type });
+      log11.debug("Skipping unrecognised MCP config entry", { name, type: e.type });
     }
   }
   return configs;
@@ -2003,11 +2053,11 @@ function readSubagentNames(deps = {}) {
 function isStringRecord(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
-var log10;
+var log11;
 var init_config = __esm(() => {
   init_plugin_toggle();
   init_logger();
-  log10 = createLogger("mcp:config");
+  log11 = createLogger("mcp:config");
 });
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/zod-compat.js
@@ -8144,11 +8194,11 @@ var require_core = __commonJS((exports) => {
   Ajv.ValidationError = validation_error_1.default;
   Ajv.MissingRefError = ref_error_1.default;
   exports.default = Ajv;
-  function checkOptions(checkOpts, options, msg, log11 = "error") {
+  function checkOptions(checkOpts, options, msg, log12 = "error") {
     for (const key in checkOpts) {
       const opt = key;
       if (opt in options)
-        this.logger[log11](`${msg}: option ${key}. ${checkOpts[opt]}`);
+        this.logger[log12](`${msg}: option ${key}. ${checkOpts[opt]}`);
     }
   }
   function getSchEnv(keyRef) {
@@ -11765,14 +11815,14 @@ class McpClientManager {
   }
   async connectServer(config) {
     if (this.connections.has(config.name)) {
-      log11.debug("Server already connected, skipping", { server: config.name });
+      log12.debug("Server already connected, skipping", { server: config.name });
       return;
     }
     if (!this.deps) {
       try {
         this.deps = await loadDefaultDeps();
       } catch (err) {
-        log11.warn("Failed to load MCP SDK", { error: String(err) });
+        log12.warn("Failed to load MCP SDK", { error: String(err) });
         return;
       }
     }
@@ -11783,7 +11833,7 @@ class McpClientManager {
       const transport = deps.createTransport(config);
       await client.connect(transport);
     } catch (err) {
-      log11.warn("MCP server connection failed", {
+      log12.warn("MCP server connection failed", {
         server: config.name,
         error: String(err)
       });
@@ -11793,12 +11843,12 @@ class McpClientManager {
     try {
       const result = await client.listTools();
       tools = result?.tools ?? [];
-      log11.info("MCP server connected", {
+      log12.info("MCP server connected", {
         server: config.name,
         tools: tools.length
       });
     } catch (err) {
-      log11.warn("MCP tool discovery failed", {
+      log12.warn("MCP tool discovery failed", {
         server: config.name,
         error: String(err)
       });
@@ -11830,7 +11880,7 @@ class McpClientManager {
       }
       return typeof result === "string" ? result : JSON.stringify(result);
     } catch (err) {
-      log11.warn("MCP tool call failed", {
+      log12.warn("MCP tool call failed", {
         server: serverName,
         tool: toolName,
         error: String(err?.message || err)
@@ -11842,9 +11892,9 @@ class McpClientManager {
     for (const [name, conn] of this.connections) {
       try {
         await conn.client.close();
-        log11.debug("MCP server disconnected", { server: name });
+        log12.debug("MCP server disconnected", { server: name });
       } catch (err) {
-        log11.debug("MCP server disconnect failed", { server: name, error: String(err) });
+        log12.debug("MCP server disconnect failed", { server: name, error: String(err) });
       }
     }
     this.connections.clear();
@@ -11853,10 +11903,10 @@ class McpClientManager {
     return Array.from(this.connections.keys());
   }
 }
-var log11, defaultDeps2 = null;
+var log12, defaultDeps2 = null;
 var init_client_manager = __esm(() => {
   init_logger();
-  log11 = createLogger("mcp:client-manager");
+  log12 = createLogger("mcp:client-manager");
 });
 
 // src/mcp/tool-bridge.ts
@@ -11867,7 +11917,7 @@ function buildMcpToolHookEntries(tools, manager) {
   for (const t of tools) {
     const hookName = namespaceMcpTool(t.serverName, t.name);
     if (entries[hookName]) {
-      log12.debug("Duplicate MCP tool name, skipping", { hookName });
+      log13.debug("Duplicate MCP tool name, skipping", { hookName });
       continue;
     }
     const zodArgs = mcpSchemaToZod(t.inputSchema, z2);
@@ -11877,7 +11927,7 @@ function buildMcpToolHookEntries(tools, manager) {
       description: t.description || `MCP tool: ${t.name} (server: ${t.serverName})`,
       args: zodArgs,
       async execute(args) {
-        log12.debug("Executing MCP tool", { server: serverName, tool: toolName });
+        log13.debug("Executing MCP tool", { server: serverName, tool: toolName });
         const result = await manager.callTool(serverName, toolName, args ?? {});
         if (result.startsWith("Error:")) {
           throw new Error(result);
@@ -11886,7 +11936,7 @@ function buildMcpToolHookEntries(tools, manager) {
       }
     });
   }
-  log12.debug("Built MCP tool hook entries", { count: Object.keys(entries).length });
+  log13.debug("Built MCP tool hook entries", { count: Object.keys(entries).length });
   return entries;
 }
 function buildMcpToolDefinitions(tools) {
@@ -11933,7 +11983,7 @@ function mcpSchemaToZod(inputSchema, z2) {
         zodType = z2.array(z2.any());
         break;
       case "object":
-        zodType = z2.record(z2.any());
+        zodType = z2.record(z2.string(), z2.any());
         break;
       default:
         zodType = z2.any();
@@ -11949,10 +11999,10 @@ function mcpSchemaToZod(inputSchema, z2) {
   }
   return shape;
 }
-var log12;
+var log13;
 var init_tool_bridge = __esm(() => {
   init_logger();
-  log12 = createLogger("mcp:tool-bridge");
+  log13 = createLogger("mcp:tool-bridge");
 });
 
 // node_modules/@opencode-ai/sdk/dist/gen/types.gen.js
@@ -13363,15 +13413,15 @@ class LocalExecutor {
       const out = await handler(args);
       return { status: "success", output: out };
     } catch (err) {
-      log13.warn("Local tool execution failed", { toolId, error: String(err?.message || err) });
+      log14.warn("Local tool execution failed", { toolId, error: String(err?.message || err) });
       return { status: "error", error: String(err?.message || err) };
     }
   }
 }
-var log13;
+var log14;
 var init_local = __esm(() => {
   init_logger();
-  log13 = createLogger("tools:executor:local");
+  log14 = createLogger("tools:executor:local");
 });
 
 // src/tools/executors/sdk.ts
@@ -13398,7 +13448,7 @@ class SdkExecutor {
       const out = typeof res === "string" ? res : JSON.stringify(res);
       return { status: "success", output: out };
     } catch (err) {
-      log14.warn("SDK tool execution failed", { toolId, error: String(err?.message || err) });
+      log15.warn("SDK tool execution failed", { toolId, error: String(err?.message || err) });
       return { status: "error", error: String(err?.message || err) };
     }
   }
@@ -13411,10 +13461,10 @@ class SdkExecutor {
     ]);
   }
 }
-var log14;
+var log15;
 var init_sdk = __esm(() => {
   init_logger();
-  log14 = createLogger("tools:executor:sdk");
+  log15 = createLogger("tools:executor:sdk");
 });
 
 // src/tools/executors/mcp.ts
@@ -13441,7 +13491,7 @@ class McpExecutor {
       const out = typeof res === "string" ? res : JSON.stringify(res);
       return { status: "success", output: out };
     } catch (err) {
-      log15.warn("MCP tool execution failed", { toolId, error: String(err?.message || err) });
+      log16.warn("MCP tool execution failed", { toolId, error: String(err?.message || err) });
       return { status: "error", error: String(err?.message || err) };
     }
   }
@@ -13454,10 +13504,10 @@ class McpExecutor {
     ]);
   }
 }
-var log15;
+var log16;
 var init_mcp = __esm(() => {
   init_logger();
-  log15 = createLogger("tools:executor:mcp");
+  log16 = createLogger("tools:executor:mcp");
 });
 
 // src/tools/core/executor.ts
@@ -13467,17 +13517,17 @@ async function executeWithChain(executors, toolId, args) {
       try {
         return await ex.execute(toolId, args);
       } catch (err) {
-        log16.warn("Executor threw unexpected error", { toolId, error: String(err?.message || err) });
+        log17.warn("Executor threw unexpected error", { toolId, error: String(err?.message || err) });
         return { status: "error", error: String(err?.message || err) };
       }
     }
   }
   return { status: "error", error: `No executor available for ${toolId}` };
 }
-var log16;
+var log17;
 var init_executor = __esm(() => {
   init_logger();
-  log16 = createLogger("tools:executor:chain");
+  log17 = createLogger("tools:executor:chain");
 });
 
 // src/tools/defaults.ts
@@ -13721,6 +13771,9 @@ ${output}`);
     const pattern = args.pattern;
     const path2 = args.path;
     const include = args.include;
+    if (process.platform === "win32") {
+      return nodeFallbackGrep(pattern, path2, include);
+    }
     const grepArgs = ["-r", "-n"];
     if (include) {
       grepArgs.push(`--include=${include}`);
@@ -13813,6 +13866,9 @@ ${output}`);
     const path2 = resolvePathArg(args, "glob");
     const cwd = path2 || ".";
     const normalizedPattern = pattern.replace(/\\/g, "/");
+    if (process.platform === "win32") {
+      return nodeFallbackGlob(normalizedPattern, cwd);
+    }
     const isPathPattern = normalizedPattern.includes("/");
     const findArgs = [cwd, "-type", "f"];
     if (isPathPattern) {
@@ -14089,6 +14145,146 @@ function coerceToString(value) {
   }
   return null;
 }
+async function nodeFallbackGrep(pattern, searchPath, include) {
+  const fs2 = await import("fs/promises");
+  const path2 = await import("path");
+  let regex2;
+  try {
+    regex2 = new RegExp(pattern);
+  } catch {
+    return "Invalid regex pattern";
+  }
+  let includeRegex;
+  if (include) {
+    const incPattern = include.replace(/\./g, "\\.").replace(/\?/g, ".").replace(/\*/g, ".*");
+    includeRegex = new RegExp(`^${incPattern}$`);
+  }
+  const results = [];
+  async function walk(dir) {
+    if (results.length >= 100)
+      return;
+    let entries;
+    try {
+      entries = await fs2.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if (err?.code !== "ENOENT" && err?.code !== "EACCES") {
+        fallbackLog.error("Unexpected error reading directory", { dir, code: err?.code, message: err?.message });
+      }
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= 100)
+        return;
+      const fullPath = path2.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!FALLBACK_SKIP_DIRS.has(entry.name)) {
+          await walk(fullPath);
+        }
+      } else if (entry.isFile()) {
+        if (includeRegex && !includeRegex.test(entry.name))
+          continue;
+        let content;
+        try {
+          content = await fs2.readFile(fullPath, "utf-8");
+        } catch (err) {
+          if (err?.code !== "ENOENT" && err?.code !== "EACCES") {
+            fallbackLog.error("Unexpected error reading file", { path: fullPath, code: err?.code, message: err?.message });
+          }
+          continue;
+        }
+        const lines = content.split(`
+`);
+        for (let i = 0;i < lines.length; i++) {
+          if (regex2.test(lines[i])) {
+            results.push(`${fullPath}:${i + 1}:${lines[i]}`);
+            if (results.length >= 100)
+              break;
+          }
+        }
+      }
+    }
+  }
+  let stat;
+  try {
+    stat = await fs2.stat(searchPath);
+  } catch {
+    return "Path not found";
+  }
+  if (stat.isFile()) {
+    let content;
+    try {
+      content = await fs2.readFile(searchPath, "utf-8");
+    } catch (err) {
+      if (err?.code !== "ENOENT" && err?.code !== "EACCES") {
+        fallbackLog.error("Unexpected error reading file", { path: searchPath, code: err?.code, message: err?.message });
+      }
+      return "Path not found";
+    }
+    const lines = content.split(`
+`);
+    for (let i = 0;i < lines.length; i++) {
+      if (regex2.test(lines[i])) {
+        results.push(`${searchPath}:${i + 1}:${lines[i]}`);
+        if (results.length >= 100)
+          break;
+      }
+    }
+  } else {
+    await walk(searchPath);
+  }
+  return results.join(`
+`) || "No matches found";
+}
+async function nodeFallbackGlob(pattern, searchPath) {
+  const fs2 = await import("fs/promises");
+  const path2 = await import("path");
+  const results = [];
+  const isPathPattern = pattern.includes("/");
+  let regexPattern = pattern.replace(/\./g, "\\.").replace(/\*\*/g, "\x00").replace(/\*/g, "[^/]*").replace(/\x00/g, ".*");
+  let regex2;
+  try {
+    regex2 = isPathPattern ? new RegExp(`${regexPattern}$`) : new RegExp(`^${regexPattern}$`);
+  } catch {
+    return "No files found";
+  }
+  async function walk(dir) {
+    if (results.length >= 50)
+      return;
+    let entries;
+    try {
+      entries = await fs2.readdir(dir, { withFileTypes: true });
+    } catch (err) {
+      if (err?.code !== "ENOENT" && err?.code !== "EACCES") {
+        fallbackLog.error("Unexpected error reading directory", { dir, code: err?.code, message: err?.message });
+      }
+      return;
+    }
+    for (const entry of entries) {
+      if (results.length >= 50)
+        return;
+      const fullPath = path2.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (!FALLBACK_SKIP_DIRS.has(entry.name)) {
+          await walk(fullPath);
+        }
+      } else if (entry.isFile()) {
+        const matchTarget = isPathPattern ? fullPath.replace(/\\/g, "/") : entry.name;
+        if (regex2.test(matchTarget)) {
+          results.push(fullPath);
+        }
+      }
+    }
+  }
+  await walk(searchPath);
+  return results.join(`
+`) || "No files found";
+}
+var FALLBACK_SKIP_DIRS, fallbackLog;
+var init_defaults = __esm(() => {
+  init_logger();
+  FALLBACK_SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build"]);
+  fallbackLog = createLogger("tools:fallback");
+});
 
 // src/provider/boundary.ts
 function parseProviderBoundaryMode(value) {
@@ -14149,6 +14345,11 @@ function createSharedBoundary(providerId) {
       const prefix = `${providerId}/`;
       if (raw.startsWith(prefix)) {
         const stripped = raw.slice(prefix.length).trim();
+        return stripped.length > 0 ? stripped : "auto";
+      }
+      const slashIndex = raw.indexOf("/");
+      if (slashIndex !== -1) {
+        const stripped = raw.slice(slashIndex + 1).trim();
         return stripped.length > 0 ? stripped : "auto";
       }
       return raw;
@@ -14600,7 +14801,7 @@ async function handleToolLoopEventLegacy(options) {
   const extraction = toolLoopMode === "opencode" ? extractOpenAiToolCall(event, allowedToolNames) : { action: "skip", skipReason: "tool_loop_mode_not_opencode" };
   if (extraction.action === "passthrough") {
     passThroughTracker?.trackTool(extraction.passthroughName);
-    log17.debug("MCP tool passed through to cursor-agent (legacy)", {
+    log18.debug("MCP tool passed through to cursor-agent (legacy)", {
       tool: extraction.passthroughName
     });
     return { intercepted: false, skipConverter: false };
@@ -14624,7 +14825,7 @@ async function handleToolLoopEventLegacy(options) {
   if (interceptedToolCall) {
     const compat = applyToolSchemaCompat(interceptedToolCall, toolSchemaMap);
     let normalizedToolCall = compat.toolCall;
-    log17.debug("Applied tool schema compatibility (legacy)", {
+    log18.debug("Applied tool schema compatibility (legacy)", {
       tool: normalizedToolCall.function.name,
       originalArgKeys: compat.originalArgKeys,
       normalizedArgKeys: compat.normalizedArgKeys,
@@ -14636,7 +14837,7 @@ async function handleToolLoopEventLegacy(options) {
       if (validationTermination) {
         if (validationTermination.soft) {
           const hintChunk = createLoopGuardHintChunk(responseMeta, normalizedToolCall, validationTermination);
-          log17.debug("Soft-blocking schema validation loop guard in legacy (emitting hint)", {
+          log18.debug("Soft-blocking schema validation loop guard in legacy (emitting hint)", {
             tool: normalizedToolCall.function.name,
             fingerprint: validationTermination.fingerprint
           });
@@ -14647,7 +14848,7 @@ async function handleToolLoopEventLegacy(options) {
       }
       const reroutedWrite = tryRerouteEditToWrite(normalizedToolCall, compat.normalizedArgs, allowedToolNames, toolSchemaMap);
       if (reroutedWrite) {
-        log17.debug("Rerouting malformed edit call to write (legacy)", {
+        log18.debug("Rerouting malformed edit call to write (legacy)", {
           path: reroutedWrite.path,
           missing: compat.validation.missing,
           typeErrors: compat.validation.typeErrors
@@ -14655,7 +14856,7 @@ async function handleToolLoopEventLegacy(options) {
         normalizedToolCall = reroutedWrite.toolCall;
       } else if (shouldEmitNonFatalSchemaValidationHint(normalizedToolCall, compat.validation)) {
         const hintChunk = createNonFatalSchemaValidationHintChunk(responseMeta, normalizedToolCall, compat.validation);
-        log17.debug("Emitting non-fatal schema validation hint in legacy and skipping malformed tool execution", {
+        log18.debug("Emitting non-fatal schema validation hint in legacy and skipping malformed tool execution", {
           tool: normalizedToolCall.function.name,
           missing: compat.validation.missing,
           typeErrors: compat.validation.typeErrors
@@ -14668,7 +14869,7 @@ async function handleToolLoopEventLegacy(options) {
     if (termination) {
       if (termination.soft) {
         const hintChunk = createLoopGuardHintChunk(responseMeta, normalizedToolCall, termination);
-        log17.debug("Soft-blocking tool loop guard in legacy (emitting hint)", {
+        log18.debug("Soft-blocking tool loop guard in legacy (emitting hint)", {
           tool: normalizedToolCall.function.name,
           fingerprint: termination.fingerprint
         });
@@ -14726,7 +14927,7 @@ async function handleToolLoopEventV1(options) {
   }
   if (extraction.action === "passthrough") {
     passThroughTracker?.trackTool(extraction.passthroughName);
-    log17.debug("MCP tool passed through to cursor-agent (v1)", {
+    log18.debug("MCP tool passed through to cursor-agent (v1)", {
       tool: extraction.passthroughName
     });
     return { intercepted: false, skipConverter: false };
@@ -14753,7 +14954,7 @@ async function handleToolLoopEventV1(options) {
     rawArgs: safeArgTypeSummary(event),
     normalizedArgs: compat.normalizedArgs
   } : undefined;
-  log17.debug("Applied tool schema compatibility", {
+  log18.debug("Applied tool schema compatibility", {
     tool: normalizedToolCall.function.name,
     originalArgKeys: compat.originalArgKeys,
     normalizedArgKeys: compat.normalizedArgKeys,
@@ -14762,7 +14963,7 @@ async function handleToolLoopEventV1(options) {
     ...editDiag ? { editDiag } : {}
   });
   if (compat.validation.hasSchema && !compat.validation.ok) {
-    log17.debug("Tool schema compatibility validation failed", {
+    log18.debug("Tool schema compatibility validation failed", {
       tool: normalizedToolCall.function.name,
       missing: compat.validation.missing,
       unexpected: compat.validation.unexpected,
@@ -14773,7 +14974,7 @@ async function handleToolLoopEventV1(options) {
     if (validationTermination) {
       if (validationTermination.soft) {
         const hintChunk = createLoopGuardHintChunk(responseMeta, normalizedToolCall, validationTermination);
-        log17.debug("Soft-blocking schema validation loop guard (emitting hint)", {
+        log18.debug("Soft-blocking schema validation loop guard (emitting hint)", {
           tool: normalizedToolCall.function.name,
           fingerprint: validationTermination.fingerprint,
           repeatCount: validationTermination.repeatCount
@@ -14787,7 +14988,7 @@ async function handleToolLoopEventV1(options) {
     if (termination2) {
       if (termination2.soft) {
         const hintChunk = createLoopGuardHintChunk(responseMeta, normalizedToolCall, termination2);
-        log17.debug("Soft-blocking tool loop guard in validation path (emitting hint)", {
+        log18.debug("Soft-blocking tool loop guard in validation path (emitting hint)", {
           tool: normalizedToolCall.function.name,
           fingerprint: termination2.fingerprint,
           repeatCount: termination2.repeatCount
@@ -14799,7 +15000,7 @@ async function handleToolLoopEventV1(options) {
     }
     const reroutedWrite = tryRerouteEditToWrite(normalizedToolCall, compat.normalizedArgs, allowedToolNames, toolSchemaMap);
     if (reroutedWrite) {
-      log17.debug("Rerouting malformed edit call to write", {
+      log18.debug("Rerouting malformed edit call to write", {
         path: reroutedWrite.path,
         missing: compat.validation.missing,
         typeErrors: compat.validation.typeErrors
@@ -14819,7 +15020,7 @@ async function handleToolLoopEventV1(options) {
     }
     if (schemaValidationFailureMode === "pass_through" && shouldEmitNonFatalSchemaValidationHint(normalizedToolCall, compat.validation)) {
       const hintChunk = createNonFatalSchemaValidationHintChunk(responseMeta, normalizedToolCall, compat.validation);
-      log17.debug("Emitting non-fatal schema validation hint and skipping malformed tool execution", {
+      log18.debug("Emitting non-fatal schema validation hint and skipping malformed tool execution", {
         tool: normalizedToolCall.function.name,
         missing: compat.validation.missing,
         typeErrors: compat.validation.typeErrors
@@ -14837,7 +15038,7 @@ async function handleToolLoopEventV1(options) {
         terminate: createSchemaValidationTermination(normalizedToolCall, compat.validation)
       };
     }
-    log17.debug("Forwarding schema-invalid tool call to OpenCode loop", {
+    log18.debug("Forwarding schema-invalid tool call to OpenCode loop", {
       tool: normalizedToolCall.function.name,
       repairHint: compat.validation.repairHint
     });
@@ -14851,7 +15052,7 @@ async function handleToolLoopEventV1(options) {
   if (termination) {
     if (termination.soft) {
       const hintChunk = createLoopGuardHintChunk(responseMeta, normalizedToolCall, termination);
-      log17.debug("Soft-blocking tool loop guard (emitting hint)", {
+      log18.debug("Soft-blocking tool loop guard (emitting hint)", {
         tool: normalizedToolCall.function.name,
         fingerprint: termination.fingerprint,
         repeatCount: termination.repeatCount
@@ -14910,7 +15111,7 @@ function evaluateToolLoopGuard(toolLoopGuard, toolCall) {
   if (!decision.triggered) {
     return null;
   }
-  log17.debug("Tool loop guard triggered", {
+  log18.debug("Tool loop guard triggered", {
     tool: toolCall.function.name,
     fingerprint: decision.fingerprint,
     repeatCount: decision.repeatCount,
@@ -14972,7 +15173,7 @@ function evaluateSchemaValidationLoopGuard(toolLoopGuard, toolCall, validation) 
     return null;
   }
   const isFirstTrigger = decision.repeatCount === decision.maxRepeat + 1;
-  log17.debug("Tool loop guard triggered on schema validation", {
+  log18.debug("Tool loop guard triggered on schema validation", {
     tool: toolCall.function.name,
     fingerprint: decision.fingerprint,
     repeatCount: decision.repeatCount,
@@ -15152,12 +15353,12 @@ function tryRerouteEditToWrite(toolCall, normalizedArgs, allowedToolNames, toolS
 function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-var log17, ToolBoundaryExtractionError;
+var log18, ToolBoundaryExtractionError;
 var init_runtime_interception = __esm(() => {
   init_tool_loop();
   init_logger();
   init_tool_schema_compat();
-  log17 = createLogger("provider:runtime-interception");
+  log18 = createLogger("provider:runtime-interception");
   ToolBoundaryExtractionError = class ToolBoundaryExtractionError extends Error {
     cause;
     constructor(message, cause) {
@@ -15199,7 +15400,7 @@ class ToastService {
   }
   async show(options) {
     if (!this.client?.tui?.showToast) {
-      log18.debug("Toast not available; client.tui.showToast missing", { message: options.message });
+      log19.debug("Toast not available; client.tui.showToast missing", { message: options.message });
       return;
     }
     try {
@@ -15211,7 +15412,7 @@ class ToastService {
         }
       });
     } catch (error) {
-      log18.debug("Toast failed", { error, message: options.message });
+      log19.debug("Toast failed", { error, message: options.message });
     }
   }
   async showPassThroughSummary(tools) {
@@ -15235,10 +15436,10 @@ class ToastService {
     });
   }
 }
-var log18, toastService;
+var log19, toastService;
 var init_toast_service = __esm(() => {
   init_logger();
-  log18 = createLogger("services:toast");
+  log19 = createLogger("services:toast");
   toastService = new ToastService;
 });
 
@@ -15687,19 +15888,22 @@ var init_tool_loop_guard = __esm(() => {
 var exports_plugin = {};
 __export(exports_plugin, {
   shouldProcessModel: () => shouldProcessModel,
+  resolveWorkspaceDirectory: () => resolveWorkspaceDirectory,
   resolveChatParamTools: () => resolveChatParamTools,
   normalizeWorkspaceForCompare: () => normalizeWorkspaceForCompare,
+  isRootPath: () => isRootPath,
   isReusableProxyHealthPayload: () => isReusableProxyHealthPayload,
+  extractCompletionFromStream: () => extractCompletionFromStream,
   ensurePluginDirectory: () => ensurePluginDirectory,
   default: () => plugin_default,
   buildAvailableToolsSystemMessage: () => buildAvailableToolsSystemMessage,
   CursorPlugin: () => CursorPlugin
 });
 import { tool as tool2 } from "@opencode-ai/plugin";
-import { appendFileSync as appendFileSync3, existsSync as existsSync5, realpathSync } from "fs";
+import { appendFileSync as appendFileSync3, existsSync as existsSync5, readFileSync as readFileSync2, realpathSync, writeFileSync } from "fs";
 import { mkdir } from "fs/promises";
 import { homedir as homedir5 } from "os";
-import { isAbsolute, join as join5, relative, resolve as resolve2 } from "path";
+import { isAbsolute, join as join6, relative, resolve as resolve2 } from "path";
 function ensureDebugLogDir() {
   try {
     if (!existsSync5(DEBUG_LOG_DIR2)) {
@@ -15715,6 +15919,131 @@ function debugLogToFile2(message, data) {
 `;
     appendFileSync3(DEBUG_LOG_FILE2, logLine);
   } catch {}
+}
+function cursorCliConfigPath() {
+  return join6(homedir5(), ".cursor", "cli-config.json");
+}
+function parseCursorVariantModel(model) {
+  for (const variant of CURSOR_VARIANT_SUFFIXES) {
+    const suffix = `-${variant}`;
+    if (!model.endsWith(suffix)) {
+      continue;
+    }
+    const baseModel = model.slice(0, -suffix.length);
+    if (baseModel.split("-").filter(Boolean).length >= 2) {
+      return { baseModel, variant };
+    }
+  }
+}
+function shouldUseCursorCliConfigSelection(baseModel) {
+  return baseModel === "composer-2" || /^gpt-5\.[45]/.test(baseModel) || baseModel.startsWith("claude-opus-4-7") || baseModel.startsWith("grok-");
+}
+function upsertParameter(parameters, id, value) {
+  const existing = parameters.find((parameter) => parameter.id === id);
+  if (existing) {
+    existing.value = value;
+    return;
+  }
+  parameters.push({ id, value });
+}
+function titleCaseVariant(value) {
+  return value.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+function inferDefaultParameters(baseModel) {
+  if (baseModel === "composer-2") {
+    return [{ id: "fast", value: "false" }];
+  }
+  if (/^gpt-5\.[45]/.test(baseModel)) {
+    return [
+      { id: "context", value: "272k" },
+      { id: "reasoning", value: "medium" },
+      { id: "fast", value: "false" }
+    ];
+  }
+  if (baseModel.startsWith("claude-opus-4-7")) {
+    return [
+      { id: "thinking", value: "false" },
+      { id: "context", value: "300k" },
+      { id: "effort", value: "xhigh" }
+    ];
+  }
+  if (baseModel.startsWith("claude-") || baseModel.startsWith("grok-")) {
+    return [{ id: "thinking", value: "false" }];
+  }
+  return [];
+}
+function applyVariantParameters(baseModel, variant, parameters) {
+  const parts = variant.split("-");
+  const fast = parts.includes("fast");
+  const thinking = parts.includes("thinking");
+  const reasoning = parts.find((part) => ["none", "low", "medium", "high", "xhigh", "max", "extra"].includes(part));
+  if (parameters.some((parameter) => parameter.id === "fast") || fast || baseModel === "composer-2") {
+    upsertParameter(parameters, "fast", fast ? "true" : "false");
+  }
+  if (parameters.some((parameter) => parameter.id === "thinking") || thinking) {
+    upsertParameter(parameters, "thinking", thinking ? "true" : "false");
+  }
+  const effortValue = variant.includes("extra-high") ? "extra-high" : reasoning === "extra" ? "extra-high" : reasoning;
+  if (!effortValue) {
+    return;
+  }
+  const targetParameter = parameters.some((parameter) => parameter.id === "effort") ? "effort" : "reasoning";
+  const value = baseModel === "gpt-5.5" && effortValue === "xhigh" ? "extra-high" : effortValue;
+  upsertParameter(parameters, targetParameter, value);
+}
+function cursorModelSelection(model, config) {
+  const raw = typeof model === "string" ? model.trim() : "";
+  const parsed = raw === "composer-2" ? { baseModel: "composer-2", variant: "" } : parseCursorVariantModel(raw);
+  if (!parsed) {
+    return;
+  }
+  if (!shouldUseCursorCliConfigSelection(parsed.baseModel)) {
+    return;
+  }
+  const savedParameters = Array.isArray(config.modelParameters?.[parsed.baseModel]) ? config.modelParameters[parsed.baseModel] : inferDefaultParameters(parsed.baseModel);
+  const parameters = savedParameters.map((parameter) => ({ ...parameter }));
+  if (parsed.variant || parsed.baseModel === "composer-2") {
+    applyVariantParameters(parsed.baseModel, parsed.variant, parameters);
+  }
+  const suffix = parsed.variant ? ` ${titleCaseVariant(parsed.variant.replace("xhigh", "extra-high"))}` : "";
+  return {
+    modelId: parsed.baseModel,
+    displayModelId: parsed.baseModel,
+    displayName: `${parsed.baseModel.toUpperCase()}${suffix}`,
+    parameters
+  };
+}
+function applyCursorModelSelection(model) {
+  const configPath = cursorCliConfigPath();
+  const config = existsSync5(configPath) ? JSON.parse(readFileSync2(configPath, "utf8")) : {};
+  const selection = cursorModelSelection(model, config);
+  if (!selection) {
+    return model;
+  }
+  config.model = {
+    modelId: selection.modelId,
+    displayModelId: selection.displayModelId,
+    displayName: selection.displayName,
+    displayNameShort: selection.displayName,
+    aliases: [],
+    maxMode: false
+  };
+  config.hasChangedDefaultModel = true;
+  config.maxMode = false;
+  config.modelParameters = config.modelParameters || {};
+  config.modelParameters[selection.modelId] = selection.parameters;
+  config.selectedModel = {
+    modelId: selection.modelId,
+    parameters: selection.parameters
+  };
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}
+`, "utf8");
+  debugLogToFile2("cursor_model_selection", {
+    requestedModel: model,
+    cliModel: selection.modelId,
+    parameters: selection.parameters
+  });
+  return selection.modelId;
 }
 function buildAvailableToolsSystemMessage(lastToolNames, lastToolMap, mcpToolDefs, mcpToolSummaries, subagentNames = []) {
   const parts = [];
@@ -15759,13 +16088,13 @@ function buildAvailableToolsSystemMessage(lastToolNames, lastToolMap, mcpToolDef
 `) : null;
 }
 async function ensurePluginDirectory() {
-  const configHome = process.env.XDG_CONFIG_HOME ? resolve2(process.env.XDG_CONFIG_HOME) : join5(homedir5(), ".config");
-  const pluginDir = join5(configHome, "opencode", "plugin");
+  const configHome = process.env.XDG_CONFIG_HOME ? resolve2(process.env.XDG_CONFIG_HOME) : join6(homedir5(), ".config");
+  const pluginDir = join6(configHome, "opencode", "plugin");
   try {
     await mkdir(pluginDir, { recursive: true });
-    log19.debug("Plugin directory ensured", { path: pluginDir });
+    log20.debug("Plugin directory ensured", { path: pluginDir });
   } catch (error) {
-    log19.warn("Failed to create plugin directory", { error: String(error) });
+    log20.warn("Failed to create plugin directory", { error: String(error) });
   }
 }
 function shouldProcessModel(model) {
@@ -15777,8 +16106,8 @@ function getGlobalKey() {
   return "__opencode_cursor_proxy_server__";
 }
 function getOpenCodeConfigPrefix() {
-  const configHome = process.env.XDG_CONFIG_HOME ? resolve2(process.env.XDG_CONFIG_HOME) : join5(homedir5(), ".config");
-  return join5(configHome, "opencode");
+  const configHome = process.env.XDG_CONFIG_HOME ? resolve2(process.env.XDG_CONFIG_HOME) : join6(homedir5(), ".config");
+  return join6(configHome, "opencode");
 }
 function canonicalizePathForCompare(pathValue) {
   const resolvedPath = resolve2(pathValue);
@@ -15788,7 +16117,7 @@ function canonicalizePathForCompare(pathValue) {
   } catch {
     normalizedPath = resolvedPath;
   }
-  if (process.platform === "darwin") {
+  if (process.platform === "darwin" || process.platform === "win32") {
     return normalizedPath.toLowerCase();
   }
   return normalizedPath;
@@ -15811,32 +16140,62 @@ function isNonConfigPath(pathValue) {
   }
   return !isWithinPath(getOpenCodeConfigPrefix(), pathValue);
 }
+function isRootPath(pathValue) {
+  if (!pathValue) {
+    return false;
+  }
+  const resolved = resolve2(pathValue);
+  if (resolved === "/") {
+    return true;
+  }
+  return /^[A-Za-z]:[\\/]?$/.test(resolved);
+}
+function isAcceptableWorkspace(pathValue, configPrefix) {
+  if (!pathValue) {
+    return false;
+  }
+  if (isRootPath(pathValue)) {
+    return false;
+  }
+  if (isWithinPath(configPrefix, pathValue)) {
+    return false;
+  }
+  return true;
+}
 function resolveWorkspaceDirectory(worktree, directory) {
-  const envWorkspace = process.env.CURSOR_ACP_WORKSPACE?.trim();
-  if (envWorkspace) {
-    return resolve2(envWorkspace);
-  }
-  const envProjectDir = process.env.OPENCODE_CURSOR_PROJECT_DIR?.trim();
-  if (envProjectDir) {
-    return resolve2(envProjectDir);
-  }
   const configPrefix = getOpenCodeConfigPrefix();
+  const envWorkspace = resolveCandidate(process.env.CURSOR_ACP_WORKSPACE);
+  if (envWorkspace && !isRootPath(envWorkspace)) {
+    return envWorkspace;
+  }
+  const envProjectDir = resolveCandidate(process.env.OPENCODE_CURSOR_PROJECT_DIR);
+  if (envProjectDir && !isRootPath(envProjectDir)) {
+    return envProjectDir;
+  }
   const worktreeCandidate = resolveCandidate(worktree);
-  if (worktreeCandidate && !isWithinPath(configPrefix, worktreeCandidate)) {
+  if (isAcceptableWorkspace(worktreeCandidate, configPrefix)) {
     return worktreeCandidate;
   }
   const dirCandidate = resolveCandidate(directory);
-  if (dirCandidate && !isWithinPath(configPrefix, dirCandidate)) {
+  if (isAcceptableWorkspace(dirCandidate, configPrefix)) {
     return dirCandidate;
   }
   const cwd = resolve2(process.cwd());
-  if (cwd && !isWithinPath(configPrefix, cwd)) {
+  if (isAcceptableWorkspace(cwd, configPrefix)) {
     return cwd;
   }
-  return dirCandidate || cwd || configPrefix;
+  const home = resolveCandidate(homedir5());
+  if (home && !isRootPath(home)) {
+    return home;
+  }
+  return configPrefix;
 }
 function normalizeWorkspaceForCompare(pathValue) {
-  return resolve2(pathValue);
+  const resolved = resolve2(pathValue);
+  if (process.platform === "darwin" || process.platform === "win32") {
+    return resolved.toLowerCase();
+  }
+  return resolved;
 }
 function isReusableProxyHealthPayload(payload, workspaceDirectory) {
   if (!payload || payload.ok !== true) {
@@ -15905,6 +16264,7 @@ function extractCompletionFromStream(output) {
   let reasoningText = "";
   let usage;
   let sawAssistantPartials = false;
+  let sawThinkingPartials = false;
   for (const line of lines) {
     const event = parseStreamJsonLine(line);
     if (!event) {
@@ -15925,7 +16285,13 @@ function extractCompletionFromStream(output) {
     if (isThinking(event)) {
       const thinking = extractThinking(event);
       if (thinking) {
-        reasoningText += thinking;
+        const isPartial = typeof event.timestamp_ms === "number";
+        if (isPartial) {
+          reasoningText += thinking;
+          sawThinkingPartials = true;
+        } else if (!sawThinkingPartials) {
+          reasoningText = thinking;
+        }
       }
     }
     if (isResult(event)) {
@@ -15961,9 +16327,9 @@ function createBoundaryRuntimeContext(scope) {
       error: toErrorMessage(error)
     };
     if (!fallbackActive) {
-      log19.warn("Provider boundary v1 failed; switching to legacy for this request", details);
+      log20.warn("Provider boundary v1 failed; switching to legacy for this request", details);
     } else {
-      log19.debug("Provider boundary fallback already active", details);
+      log20.debug("Provider boundary fallback already active", details);
     }
     fallbackActive = true;
     return true;
@@ -16076,7 +16442,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
       if (url.pathname === "/v1/models" || url.pathname === "/models") {
         try {
           const bunAny2 = globalThis;
-          const proc = bunAny2.Bun.spawn(["cursor-agent", "models"], {
+          const proc = bunAny2.Bun.spawn([resolveCursorAgentBinary(), "models"], {
             stdout: "pipe",
             stderr: "pipe"
           });
@@ -16101,7 +16467,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
             headers: { "Content-Type": "application/json" }
           });
         } catch (err) {
-          log19.error("Failed to list models", { error: String(err) });
+          log20.error("Failed to list models", { error: String(err) });
           return new Response(JSON.stringify({ error: "Failed to fetch models from cursor-agent" }), {
             status: 500,
             headers: { "Content-Type": "application/json" }
@@ -16114,7 +16480,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
           headers: { "Content-Type": "application/json" }
         });
       }
-      log19.debug("Proxy request (bun)", { method: req.method, path: url.pathname });
+      log20.debug("Proxy request (bun)", { method: req.method, path: url.pathname });
       const body = await req.json().catch(() => ({}));
       const messages = Array.isArray(body?.messages) ? body.messages : [];
       const stream = body?.stream === true;
@@ -16136,16 +16502,18 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
       const boundaryContext = createBoundaryRuntimeContext("bun-handler");
       const subagentNames = readSubagentNames();
       const prompt = buildPromptFromMessages(messages, tools, subagentNames);
-      const model = boundaryContext.run("resolveRuntimeModel", (boundary) => boundary.resolveRuntimeModel(body?.model, body?.cursorModel));
+      const requestedModel = boundaryContext.run("resolveRuntimeModel", (boundary) => boundary.resolveRuntimeModel(body?.model, body?.cursorModel));
+      const model = applyCursorModelSelection(requestedModel);
       const msgSummaryBun = messages.map((m, i) => {
         const role = m?.role ?? "?";
         const hasTc = Array.isArray(m?.tool_calls) ? m.tool_calls.length : 0;
         const clen = typeof m?.content === "string" ? m.content.length : Array.isArray(m?.content) ? `arr${m.content.length}` : typeof m?.content;
         return `${i}:${role}${hasTc ? `(tc:${hasTc})` : ""}(clen:${clen})`;
       });
-      log19.debug("Proxy chat request (bun)", {
+      log20.debug("Proxy chat request (bun)", {
         stream,
         model,
+        requestedModel,
         messages: messages.length,
         tools: tools.length,
         promptChars: prompt.length,
@@ -16159,7 +16527,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
         });
       }
       const cmd = [
-        "cursor-agent",
+        resolveCursorAgentBinary(),
         "--print",
         "--output-format",
         "stream-json",
@@ -16189,7 +16557,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
         const stdout = (stdoutText || "").trim();
         const stderr = (stderrText || "").trim();
         const exitCode = await child.exited;
-        log19.debug("cursor-agent completed (bun non-stream)", {
+        log20.debug("cursor-agent completed (bun non-stream)", {
           exitCode,
           stdoutChars: stdout.length,
           stderrChars: stderr.length
@@ -16215,7 +16583,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
           });
         }
         if (intercepted.toolCall) {
-          log19.debug("Intercepted OpenCode tool call (non-stream)", {
+          log20.debug("Intercepted OpenCode tool call (non-stream)", {
             name: intercepted.toolCall.function.name,
             callId: intercepted.toolCall.id
           });
@@ -16229,7 +16597,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
           const errSource = stderr || stdout || `cursor-agent exited with code ${String(exitCode ?? "unknown")} and no output`;
           const parsed = parseAgentError(errSource);
           const userError = formatErrorForUser(parsed);
-          log19.error("cursor-cli failed", {
+          log20.error("cursor-cli failed", {
             type: parsed.type,
             message: parsed.message,
             code: exitCode
@@ -16265,7 +16633,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
             const converter = new StreamToSseConverter(model, { id, created });
             const lineBuffer = new LineBuffer;
             const emitToolCallAndTerminate = (toolCall) => {
-              log19.debug("Intercepted OpenCode tool call (stream)", {
+              log20.debug("Intercepted OpenCode tool call (stream)", {
                 name: toolCall.function.name,
                 callId: toolCall.id
               });
@@ -16453,7 +16821,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
               const errSource = (stderrText || "").trim() || `cursor-agent exited with code ${String(exitCode ?? "unknown")} and no output`;
               const parsed = parseAgentError(errSource);
               const msg = formatErrorForUser(parsed);
-              log19.error("cursor-cli streaming failed", {
+              log20.error("cursor-cli streaming failed", {
                 type: parsed.type,
                 code: exitCode
               });
@@ -16464,7 +16832,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
               controller.enqueue(encoder.encode(formatSseDone()));
               return;
             }
-            log19.debug("cursor-agent completed (bun stream)", {
+            log20.debug("cursor-agent completed (bun stream)", {
               exitCode
             });
             const passThroughSummary = passThroughTracker.getSummary();
@@ -16533,8 +16901,8 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
       }
       if (url.pathname === "/v1/models" || url.pathname === "/models") {
         try {
-          const { execSync } = await import("child_process");
-          const output = execSync("cursor-agent models", { encoding: "utf-8", timeout: 30000 });
+          const { execFileSync: execFileSync2 } = await import("child_process");
+          const output = execFileSync2(resolveCursorAgentBinary(), ["models"], { encoding: "utf-8", timeout: 30000 });
           const clean = stripAnsi(output);
           const models = [];
           for (const line of clean.split(`
@@ -16552,7 +16920,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ object: "list", data: models }));
         } catch (err) {
-          log19.error("Failed to list models", { error: String(err) });
+          log20.error("Failed to list models", { error: String(err) });
           res.writeHead(500, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "Failed to fetch models" }));
         }
@@ -16563,7 +16931,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
         res.end(JSON.stringify({ error: `Unsupported path: ${url.pathname}` }));
         return;
       }
-      log19.debug("Proxy request (node)", { method: req.method, path: url.pathname });
+      log20.debug("Proxy request (node)", { method: req.method, path: url.pathname });
       let body = "";
       for await (const chunk of req) {
         body += chunk;
@@ -16578,7 +16946,8 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
       const boundaryContext = createBoundaryRuntimeContext("node-handler");
       const subagentNames = readSubagentNames();
       const prompt = buildPromptFromMessages(messages, tools, subagentNames);
-      const model = boundaryContext.run("resolveRuntimeModel", (boundary) => boundary.resolveRuntimeModel(bodyData?.model, bodyData?.cursorModel));
+      const requestedModel = boundaryContext.run("resolveRuntimeModel", (boundary) => boundary.resolveRuntimeModel(bodyData?.model, bodyData?.cursorModel));
+      const model = applyCursorModelSelection(requestedModel);
       const msgSummary = messages.map((m, i) => {
         const role = m?.role ?? "?";
         const hasTc = Array.isArray(m?.tool_calls) ? m.tool_calls.length : 0;
@@ -16587,16 +16956,17 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
         const contentLen = typeof m?.content === "string" ? m.content.length : Array.isArray(m?.content) ? `arr${m.content.length}` : typeof m?.content;
         return `${i}:${role}${hasTc ? `(tc:${hasTc})` : ""}${role === "tool" ? `(tcid:${tcId},name:${tcName},clen:${contentLen})` : `(clen:${contentLen})`}`;
       });
-      log19.debug("Proxy chat request (node)", {
+      log20.debug("Proxy chat request (node)", {
         stream,
         model,
+        requestedModel,
         messages: messages.length,
         tools: tools.length,
         promptChars: prompt.length,
         msgRoles: msgSummary.join(",")
       });
       const cmd = [
-        "cursor-agent",
+        resolveCursorAgentBinary(),
         "--print",
         "--output-format",
         "stream-json",
@@ -16609,7 +16979,10 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
       if (FORCE_TOOL_MODE) {
         cmd.push("--force");
       }
-      const child = spawn3(cmd[0], cmd.slice(1), { stdio: ["pipe", "pipe", "pipe"] });
+      const child = spawn3(cmd[0], cmd.slice(1), {
+        stdio: ["pipe", "pipe", "pipe"],
+        shell: process.platform === "win32"
+      });
       child.stdin.write(prompt);
       child.stdin.end();
       if (!stream) {
@@ -16618,14 +16991,14 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
         let spawnErrorText = null;
         child.on("error", (error) => {
           spawnErrorText = String(error?.message || error);
-          log19.error("Failed to spawn cursor-agent", { error: spawnErrorText, model });
+          log20.error("Failed to spawn cursor-agent", { error: spawnErrorText, model });
         });
         child.stdout.on("data", (chunk) => stdoutChunks.push(chunk));
         child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
         child.on("close", async (code) => {
           const stdout = Buffer.concat(stdoutChunks).toString().trim();
           const stderr = Buffer.concat(stderrChunks).toString().trim();
-          log19.debug("cursor-agent completed (node non-stream)", {
+          log20.debug("cursor-agent completed (node non-stream)", {
             code,
             stdoutChars: stdout.length,
             stderrChars: stderr.length,
@@ -16651,7 +17024,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
             return;
           }
           if (intercepted.toolCall) {
-            log19.debug("Intercepted OpenCode tool call (non-stream)", {
+            log20.debug("Intercepted OpenCode tool call (non-stream)", {
               name: intercepted.toolCall.function.name,
               callId: intercepted.toolCall.id
             });
@@ -16665,7 +17038,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
             const errSource = stderr || stdout || spawnErrorText || `cursor-agent exited with code ${String(code ?? "unknown")} and no output`;
             const parsed = parseAgentError(errSource);
             const userError = formatErrorForUser(parsed);
-            log19.error("cursor-cli failed", {
+            log20.error("cursor-cli failed", {
               type: parsed.type,
               message: parsed.message,
               code
@@ -16706,7 +17079,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
             return;
           }
           const errSource = String(error?.message || error);
-          log19.error("Failed to spawn cursor-agent (stream)", { error: errSource, model });
+          log20.error("Failed to spawn cursor-agent (stream)", { error: errSource, model });
           const parsed = parseAgentError(errSource);
           const msg = formatErrorForUser(parsed);
           const errChunk = createChatCompletionChunk(id, created, model, msg, true);
@@ -16721,7 +17094,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
           if (streamTerminated || res.writableEnded) {
             return;
           }
-          log19.debug("Intercepted OpenCode tool call (stream)", {
+          log20.debug("Intercepted OpenCode tool call (stream)", {
             name: toolCall.function.name,
             callId: toolCall.id
           });
@@ -16911,7 +17284,7 @@ async function ensureCursorProxyServer(workspaceDirectory, toolRouter) {
           perf.mark("request:done");
           perf.summarize();
           const stderrText = Buffer.concat(stderrChunks).toString().trim();
-          log19.debug("cursor-agent completed (node stream)", {
+          log20.debug("cursor-agent completed (node stream)", {
             code,
             stderrChars: stderrText.length
           });
@@ -17034,7 +17407,7 @@ function jsonSchemaToZod(jsonSchema) {
         }
         break;
       case "object":
-        zodType = z2.record(z2.any());
+        zodType = z2.record(z2.string(), z2.any());
         if (p.description) {
           zodType = zodType.describe(p.description);
         }
@@ -17145,7 +17518,7 @@ function buildToolHookEntries(registry, fallbackBaseDir) {
           const normalizedArgs = applyToolContextDefaults(toolName, args, context, fallbackBaseDir, sessionWorkspaceBySession);
           return await handler(normalizedArgs);
         } catch (error) {
-          log19.debug("Tool hook execution failed", { tool: toolName, error: String(error?.message || error) });
+          log20.debug("Tool hook execution failed", { tool: toolName, error: String(error?.message || error) });
           throw error;
         }
       }
@@ -17157,9 +17530,9 @@ function buildToolHookEntries(registry, fallbackBaseDir) {
   }
   return entries;
 }
-var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", CURSOR_PROVIDER_PREFIX, CURSOR_PROXY_HOST = "127.0.0.1", CURSOR_PROXY_DEFAULT_PORT = 32124, CURSOR_PROXY_DEFAULT_BASE_URL, REUSE_EXISTING_PROXY, SESSION_WORKSPACE_CACHE_LIMIT = 200, FORCE_TOOL_MODE, EMIT_TOOL_UPDATES, FORWARD_TOOL_CALLS, TOOL_LOOP_MODE_RAW, TOOL_LOOP_MODE, TOOL_LOOP_MODE_VALID, PROVIDER_BOUNDARY_MODE_RAW, PROVIDER_BOUNDARY_MODE, PROVIDER_BOUNDARY_MODE_VALID, LEGACY_PROVIDER_BOUNDARY, PROVIDER_BOUNDARY, ENABLE_PROVIDER_BOUNDARY_AUTOFALLBACK, TOOL_LOOP_MAX_REPEAT_RAW, TOOL_LOOP_MAX_REPEAT, TOOL_LOOP_MAX_REPEAT_VALID, PROXY_EXECUTE_TOOL_CALLS, SUPPRESS_CONVERTER_TOOL_EVENTS, SHOULD_EMIT_TOOL_UPDATES, CursorPlugin = async ({ $, directory, worktree, client: client3, serverUrl }) => {
+var log20, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_VARIANT_SUFFIXES, CURSOR_PROVIDER_ID2 = "cursor-acp", CURSOR_PROVIDER_PREFIX, CURSOR_PROXY_HOST = "127.0.0.1", CURSOR_PROXY_DEFAULT_PORT = 32124, CURSOR_PROXY_DEFAULT_BASE_URL, REUSE_EXISTING_PROXY, SESSION_WORKSPACE_CACHE_LIMIT = 200, FORCE_TOOL_MODE, EMIT_TOOL_UPDATES, FORWARD_TOOL_CALLS, TOOL_LOOP_MODE_RAW, TOOL_LOOP_MODE, TOOL_LOOP_MODE_VALID, PROVIDER_BOUNDARY_MODE_RAW, PROVIDER_BOUNDARY_MODE, PROVIDER_BOUNDARY_MODE_VALID, LEGACY_PROVIDER_BOUNDARY, PROVIDER_BOUNDARY, ENABLE_PROVIDER_BOUNDARY_AUTOFALLBACK, TOOL_LOOP_MAX_REPEAT_RAW, TOOL_LOOP_MAX_REPEAT, TOOL_LOOP_MAX_REPEAT_VALID, PROXY_EXECUTE_TOOL_CALLS, SUPPRESS_CONVERTER_TOOL_EVENTS, SHOULD_EMIT_TOOL_UPDATES, CursorPlugin = async ({ $, directory, worktree, client: client3, serverUrl }) => {
   const workspaceDirectory = resolveWorkspaceDirectory(worktree, directory);
-  log19.debug("Plugin initializing", {
+  log20.debug("Plugin initializing", {
     directory,
     worktree,
     workspaceDirectory,
@@ -17167,22 +17540,22 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
     serverUrl: serverUrl?.toString()
   });
   if (!TOOL_LOOP_MODE_VALID) {
-    log19.warn("Invalid CURSOR_ACP_TOOL_LOOP_MODE; defaulting to opencode", { value: TOOL_LOOP_MODE_RAW });
+    log20.warn("Invalid CURSOR_ACP_TOOL_LOOP_MODE; defaulting to opencode", { value: TOOL_LOOP_MODE_RAW });
   }
   if (!PROVIDER_BOUNDARY_MODE_VALID) {
-    log19.warn("Invalid CURSOR_ACP_PROVIDER_BOUNDARY; defaulting to v1", {
+    log20.warn("Invalid CURSOR_ACP_PROVIDER_BOUNDARY; defaulting to v1", {
       value: PROVIDER_BOUNDARY_MODE_RAW
     });
   }
   if (!TOOL_LOOP_MAX_REPEAT_VALID) {
-    log19.warn("Invalid CURSOR_ACP_TOOL_LOOP_MAX_REPEAT; defaulting to 3", {
+    log20.warn("Invalid CURSOR_ACP_TOOL_LOOP_MAX_REPEAT; defaulting to 3", {
       value: TOOL_LOOP_MAX_REPEAT_RAW
     });
   }
   if (ENABLE_PROVIDER_BOUNDARY_AUTOFALLBACK && PROVIDER_BOUNDARY.mode !== "v1") {
-    log19.debug("Provider boundary auto-fallback is enabled but inactive unless mode=v1");
+    log20.debug("Provider boundary auto-fallback is enabled but inactive unless mode=v1");
   }
-  log19.info("Tool loop mode configured", {
+  log20.info("Tool loop mode configured", {
     mode: TOOL_LOOP_MODE,
     providerBoundary: PROVIDER_BOUNDARY.mode,
     proxyExecToolCalls: PROXY_EXECUTE_TOOL_CALLS,
@@ -17190,7 +17563,9 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
     toolLoopMaxRepeat: TOOL_LOOP_MAX_REPEAT
   });
   await ensurePluginDirectory();
-  autoRefreshModels().catch(() => {});
+  if (process.env.CURSOR_ACP_AUTO_REFRESH_MODELS === "true") {
+    autoRefreshModels().catch(() => {});
+  }
   const mcpManager = new McpClientManager;
   let mcpToolEntries = {};
   let mcpToolDefs = [];
@@ -17200,13 +17575,13 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
     try {
       const configs = readMcpConfigs();
       if (configs.length === 0) {
-        log19.debug("No MCP servers configured, skipping MCP bridge");
+        log20.debug("No MCP servers configured, skipping MCP bridge");
       } else {
-        log19.debug("MCP bridge: connecting to servers", { count: configs.length });
+        log20.debug("MCP bridge: connecting to servers", { count: configs.length });
         await Promise.allSettled(configs.map((c) => mcpManager.connectServer(c)));
         const tools = mcpManager.listTools();
         if (tools.length === 0) {
-          log19.debug("MCP bridge: no tools discovered");
+          log20.debug("MCP bridge: no tools discovered");
         } else {
           mcpToolEntries = buildMcpToolHookEntries(tools, mcpManager);
           mcpToolDefs = buildMcpToolDefinitions(tools);
@@ -17216,23 +17591,23 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
             description: t.description,
             params: t.inputSchema ? Object.keys(t.inputSchema.properties ?? {}) : undefined
           }));
-          log19.info("MCP bridge: registered tools", {
+          log20.info("MCP bridge: registered tools", {
             servers: mcpManager.connectedServers.length,
             tools: Object.keys(mcpToolEntries).length
           });
         }
       }
     } catch (err) {
-      log19.debug("MCP bridge init failed", { error: String(err) });
+      log20.debug("MCP bridge init failed", { error: String(err) });
     }
   }
   toastService.setClient(client3);
   const toolsEnabled = process.env.CURSOR_ACP_ENABLE_OPENCODE_TOOLS !== "false";
   const legacyProxyToolPathsEnabled = toolsEnabled && TOOL_LOOP_MODE === "proxy-exec";
   if (toolsEnabled && TOOL_LOOP_MODE === "opencode") {
-    log19.debug("OpenCode mode active; skipping legacy SDK/MCP discovery and proxy-side tool execution");
+    log20.debug("OpenCode mode active; skipping legacy SDK/MCP discovery and proxy-side tool execution");
   } else if (toolsEnabled && TOOL_LOOP_MODE === "off") {
-    log19.debug("Tool loop mode off; proxy-side tool execution disabled");
+    log20.debug("Tool loop mode off; proxy-side tool execution disabled");
   }
   const serverClient = legacyProxyToolPathsEnabled ? createOpencodeClient({ baseUrl: serverUrl.toString(), directory: workspaceDirectory }) : null;
   const discovery = legacyProxyToolPathsEnabled ? new OpenCodeToolDiscovery(serverClient ?? client3) : null;
@@ -17284,7 +17659,7 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
         discoveredList = await discovery.listTools();
         discoveredList.forEach((t) => toolsByName.set(t.name, t));
       } catch (err) {
-        log19.debug("Tool discovery failed, using local tools only", { error: String(err) });
+        log20.debug("Tool discovery failed, using local tools only", { error: String(err) });
       }
     }
     const allTools = [...localTools, ...discoveredList];
@@ -17314,11 +17689,11 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
     }
     lastToolNames = toolEntries.map((e) => e.function.name);
     lastToolMap = allTools.map((t) => ({ id: t.id, name: t.name }));
-    log19.debug("Tools refreshed", { local: localTools.length, discovered: discoveredList.length, total: toolEntries.length });
+    log20.debug("Tools refreshed", { local: localTools.length, discovered: discoveredList.length, total: toolEntries.length });
     return toolEntries;
   }
   const proxyBaseURL = await ensureCursorProxyServer(workspaceDirectory, router);
-  log19.debug("Proxy server started", { baseURL: proxyBaseURL });
+  log20.debug("Proxy server started", { baseURL: proxyBaseURL });
   const toolHookEntries = buildToolHookEntries(localRegistry, workspaceDirectory);
   return {
     tool: { ...toolHookEntries, ...mcpToolEntries },
@@ -17333,9 +17708,9 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
           type: "oauth",
           async authorize() {
             try {
-              log19.info("Starting OAuth flow");
+              log20.info("Starting OAuth flow");
               const { url, instructions, callback } = await startCursorOAuth();
-              log19.debug("Got OAuth URL", { url: url.substring(0, 50) + "..." });
+              log20.debug("Got OAuth URL", { url: url.substring(0, 50) + "..." });
               return {
                 url,
                 instructions,
@@ -17343,7 +17718,7 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
                 callback
               };
             } catch (error) {
-              log19.error("OAuth error", { error });
+              log20.error("OAuth error", { error });
               throw error;
             }
           }
@@ -17367,10 +17742,10 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
             output.options.tools = resolved.tools;
           } else if (resolved.action === "preserve") {
             const count = Array.isArray(existingTools) ? existingTools.length : 0;
-            log19.debug("Using OpenCode-provided tools from chat.params", { count });
+            log20.debug("Using OpenCode-provided tools from chat.params", { count });
           }
         } catch (err) {
-          log19.debug("Failed to refresh tools", { error: String(err) });
+          log20.debug("Failed to refresh tools", { error: String(err) });
         }
       }
       if (mcpToolDefs.length > 0) {
@@ -17381,7 +17756,7 @@ var log19, DEBUG_LOG_DIR2, DEBUG_LOG_FILE2, CURSOR_PROVIDER_ID2 = "cursor-acp", 
           output.options.tools = mcpToolDefs;
         }
         const afterTools = Array.isArray(output.options.tools) ? output.options.tools : [];
-        log19.debug("Injected MCP tool definitions into chat.params", {
+        log20.debug("Injected MCP tool definitions into chat.params", {
           injectedCount: mcpToolDefs.length,
           beforeCount: beforeTools.length,
           afterCount: afterTools.length,
@@ -17422,14 +17797,43 @@ var init_plugin = __esm(() => {
   init_sdk();
   init_mcp();
   init_executor();
+  init_defaults();
   init_boundary();
   init_runtime_interception();
   init_toast_service();
   init_tool_schema_compat();
   init_tool_loop_guard();
-  log19 = createLogger("plugin");
-  DEBUG_LOG_DIR2 = join5(homedir5(), ".config", "opencode", "logs");
-  DEBUG_LOG_FILE2 = join5(DEBUG_LOG_DIR2, "tool-loop-debug.log");
+  init_binary();
+  log20 = createLogger("plugin");
+  DEBUG_LOG_DIR2 = join6(homedir5(), ".config", "opencode", "logs");
+  DEBUG_LOG_FILE2 = join6(DEBUG_LOG_DIR2, "tool-loop-debug.log");
+  CURSOR_VARIANT_SUFFIXES = [
+    "max-thinking-fast",
+    "high-thinking-fast",
+    "thinking-high-fast",
+    "medium-thinking",
+    "high-thinking",
+    "max-thinking",
+    "low-fast",
+    "medium-fast",
+    "high-fast",
+    "xhigh-fast",
+    "extra-high-fast",
+    "thinking-low",
+    "thinking-medium",
+    "thinking-high",
+    "thinking-xhigh",
+    "thinking-max",
+    "extra-high",
+    "thinking",
+    "none",
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+    "fast"
+  ];
   CURSOR_PROVIDER_PREFIX = `${CURSOR_PROVIDER_ID2}/`;
   CURSOR_PROXY_DEFAULT_BASE_URL = `http://${CURSOR_PROXY_HOST}:${CURSOR_PROXY_DEFAULT_PORT}/v1`;
   REUSE_EXISTING_PROXY = process.env.CURSOR_ACP_REUSE_EXISTING_PROXY !== "false";
@@ -17462,11 +17866,11 @@ var init_plugin = __esm(() => {
 // src/plugin-entry.ts
 init_plugin_toggle();
 init_logger();
-var log20 = createLogger("plugin-entry");
+var log21 = createLogger("plugin-entry");
 var CursorPluginEntry = async (input) => {
   const state = shouldEnableCursorPlugin();
   if (!state.enabled) {
-    log20.info("Plugin disabled in OpenCode config; skipping initialization", {
+    log21.info("Plugin disabled in OpenCode config; skipping initialization", {
       configPath: state.configPath,
       reason: state.reason
     });

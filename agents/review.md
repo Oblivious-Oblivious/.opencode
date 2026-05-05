@@ -2,7 +2,8 @@
 description: >-
   Review mode.  Identify performance, security, and correctness issues.
 mode: primary
-model: cursor/gpt-5.5-medium
+model: cursor/gpt-5.5
+variant: low
 temperature: 0.1
 color: "error"
 permission:

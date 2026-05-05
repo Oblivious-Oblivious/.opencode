@@ -21,19 +21,49 @@
       },
       "models": {
         "claude-4.5-opus-high-thinking": {"name": "Opus 4.5"},
-        "claude-4.6-opus-high-thinking": {"name": "Opus 4.6"},
-        "claude-4.6-opus-max-thinking": {"name": "Opus 4.6 Max"},
-        "claude-opus-4-7-thinking-high": {"name": "Opus 4.7 High"},
-        "claude-opus-4-7-thinking-xhigh": {"name": "Opus 4.7 xHigh"},
-        "claude-opus-4-7-thinking-max": {"name": "Opus 4.7 Max"},
+        "claude-4.6-opus": {
+          "name": "Opus 4.6",
+          "options": {"cursorModel": "claude-4.6-opus-high-thinking"},
+          "variants": {
+            "high": {"cursorModel": "claude-4.6-opus-high-thinking"},
+            "max": {"cursorModel": "claude-4.6-opus-max-thinking"}
+          }
+        },
+        "claude-opus-4-7": {
+          "name": "Opus 4.7",
+          "options": {"cursorModel": "claude-opus-4-7-thinking-high"},
+          "variants": {
+            "high": {"cursorModel": "claude-opus-4-7-thinking-high"},
+            "xhigh": {"cursorModel": "claude-opus-4-7-thinking-xhigh"},
+            "max": {"cursorModel": "claude-opus-4-7-thinking-max"}
+          }
+        },
         "claude-4.5-sonnet-thinking": {"name": "Sonnet 4.5"},
         "claude-4.6-sonnet-medium-thinking": {"name": "Sonnet 4.6"},
-        "composer-2": {"name": "Composer 2"},
-        "composer-2-fast": {"name": "Composer 2 Fast"},
+        "composer-2": {
+          "name": "Composer 2",
+          "options": {"cursorModel": "composer-2"},
+          "variants": {
+            "fast": {"cursorModel": "composer-2-fast"}
+          }
+        },
         "gemini-3.1-pro": {"name": "Gemini 3.1 Pro"},
-        "gpt-5.4-medium": {"name": "GPT-5.4 Medium"},
-        "gpt-5.4-high": {"name": "GPT-5.4 High"},
-        "gpt-5.5-medium": {"name": "GPT-5.5 Medium"},
+        "gpt-5.4": {
+          "name": "GPT-5.4",
+          "options": {"cursorModel": "gpt-5.4-medium"},
+          "variants": {
+            "medium": {"cursorModel": "gpt-5.4-medium"},
+            "high": {"cursorModel": "gpt-5.4-high"}
+          }
+        },
+        "gpt-5.5": {
+          "name": "GPT-5.5",
+          "options": {"cursorModel": "gpt-5.5-low"},
+          "variants": {
+            "low": {"cursorModel": "gpt-5.5-low"},
+            "medium": {"cursorModel": "gpt-5.5-medium"}
+          }
+        },
         "grok-4-20-thinking": {"name": "Grok 4.20 Thinking"}
       }
     },

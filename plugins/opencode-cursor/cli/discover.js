@@ -119,6 +119,173 @@ function formatErrorForUser(error) {
   return output;
 }
 
+// src/utils/logger.ts
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
+function getConfiguredLevel() {
+  const env = process.env.CURSOR_ACP_LOG_LEVEL?.toLowerCase();
+  if (env && env in LEVEL_PRIORITY) {
+    return env;
+  }
+  return "info";
+}
+function isSilent() {
+  return process.env.CURSOR_ACP_LOG_SILENT === "1" || process.env.CURSOR_ACP_LOG_SILENT === "true";
+}
+function shouldLog(level) {
+  if (isSilent())
+    return false;
+  const configured = getConfiguredLevel();
+  return LEVEL_PRIORITY[level] >= LEVEL_PRIORITY[configured];
+}
+function formatMessage(level, component, message, data) {
+  const timestamp = new Date().toISOString();
+  const prefix = `[cursor-acp:${component}]`;
+  const levelTag = level.toUpperCase().padEnd(5);
+  let formatted = `${prefix} ${levelTag} ${message}`;
+  if (data !== undefined) {
+    if (typeof data === "object") {
+      formatted += ` ${JSON.stringify(data)}`;
+    } else {
+      formatted += ` ${data}`;
+    }
+  }
+  return formatted;
+}
+function isConsoleEnabled() {
+  const consoleEnv = process.env.CURSOR_ACP_LOG_CONSOLE;
+  return consoleEnv === "1" || consoleEnv === "true";
+}
+function ensureLogDir() {
+  if (logDirEnsured)
+    return;
+  try {
+    if (!fs.existsSync(LOG_DIR)) {
+      fs.mkdirSync(LOG_DIR, { recursive: true });
+    }
+    logDirEnsured = true;
+  } catch {
+    logFileError = true;
+  }
+}
+function rotateIfNeeded() {
+  try {
+    const stats = fs.statSync(LOG_FILE);
+    if (stats.size >= MAX_LOG_SIZE) {
+      const backupFile = LOG_FILE + ".1";
+      fs.renameSync(LOG_FILE, backupFile);
+    }
+  } catch {}
+}
+function writeToFile(message) {
+  if (logFileError)
+    return;
+  ensureLogDir();
+  if (logFileError)
+    return;
+  try {
+    rotateIfNeeded();
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(LOG_FILE, `${timestamp} ${message}
+`);
+  } catch {
+    if (!logFileError) {
+      logFileError = true;
+      console.error(`[cursor-acp] Failed to write logs. Using: ${LOG_FILE}`);
+    }
+  }
+}
+function createLogger(component) {
+  return {
+    debug: (message, data) => {
+      if (!shouldLog("debug"))
+        return;
+      const formatted = formatMessage("debug", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    },
+    info: (message, data) => {
+      if (!shouldLog("info"))
+        return;
+      const formatted = formatMessage("info", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    },
+    warn: (message, data) => {
+      if (!shouldLog("warn"))
+        return;
+      const formatted = formatMessage("warn", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    },
+    error: (message, data) => {
+      if (!shouldLog("error"))
+        return;
+      const formatted = formatMessage("error", component, message, data);
+      writeToFile(formatted);
+      if (isConsoleEnabled())
+        console.error(formatted);
+    }
+  };
+}
+var LOG_DIR, LOG_FILE, MAX_LOG_SIZE, LEVEL_PRIORITY, logDirEnsured = false, logFileError = false;
+var init_logger = __esm(() => {
+  LOG_DIR = path.join(os.homedir(), ".opencode-cursor");
+  LOG_FILE = path.join(LOG_DIR, "plugin.log");
+  MAX_LOG_SIZE = 5 * 1024 * 1024;
+  LEVEL_PRIORITY = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3
+  };
+});
+
+// src/utils/binary.ts
+import { existsSync as fsExistsSync } from "fs";
+import * as pathModule from "path";
+import { homedir as osHomedir } from "os";
+function resolveCursorAgentBinary(deps = {}) {
+  const platform = deps.platform ?? process.platform;
+  const env = deps.env ?? process.env;
+  const checkExists = deps.existsSync ?? fsExistsSync;
+  const home = (deps.homedir ?? osHomedir)();
+  const envOverride = env.CURSOR_AGENT_EXECUTABLE;
+  if (envOverride && envOverride.length > 0) {
+    return envOverride;
+  }
+  if (platform === "win32") {
+    const pathJoin = pathModule.win32.join;
+    const localAppData = env.LOCALAPPDATA ?? pathJoin(home, "AppData", "Local");
+    const knownPath = pathJoin(localAppData, "cursor-agent", "cursor-agent.cmd");
+    if (checkExists(knownPath)) {
+      return knownPath;
+    }
+    log.warn("cursor-agent not found at known Windows path, falling back to PATH", { checkedPath: knownPath });
+    return "cursor-agent.cmd";
+  }
+  const knownPaths = [
+    pathModule.join(home, ".cursor-agent", "cursor-agent"),
+    "/usr/local/bin/cursor-agent"
+  ];
+  for (const p of knownPaths) {
+    if (checkExists(p)) {
+      return p;
+    }
+  }
+  log.warn("cursor-agent not found at known paths, falling back to PATH", { checkedPaths: knownPaths });
+  return "cursor-agent";
+}
+var log;
+var init_binary = __esm(() => {
+  init_logger();
+  log = createLogger("binary");
+});
+
 // src/cli/model-discovery.ts
 import { execFileSync } from "child_process";
 function parseCursorModelsOutput(output) {
@@ -142,9 +309,9 @@ function parseCursorModelsOutput(output) {
   return models;
 }
 function discoverModelsFromCursorAgent() {
-  const raw = execFileSync("cursor-agent", ["models"], {
+  const raw = execFileSync(resolveCursorAgentBinary(), ["models"], {
     encoding: "utf8",
-    killSignal: "SIGTERM",
+    ...process.platform !== "win32" && { killSignal: "SIGTERM" },
     stdio: ["ignore", "pipe", "pipe"],
     timeout: MODEL_DISCOVERY_TIMEOUT_MS
   });
@@ -179,13 +346,15 @@ function fallbackModels() {
   ];
 }
 var MODEL_DISCOVERY_TIMEOUT_MS = 5000;
-var init_model_discovery = () => {};
+var init_model_discovery = __esm(() => {
+  init_binary();
+});
 
 // src/cli/discover.ts
 init_model_discovery();
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
-import { homedir } from "os";
+import { readFileSync, writeFileSync, existsSync as existsSync2 } from "fs";
+import { join as join3 } from "path";
+import { homedir as homedir2 } from "os";
 async function main() {
   console.log("Discovering Cursor models...");
   let models = fallbackModels();
@@ -199,8 +368,8 @@ async function main() {
   for (const model of models) {
     console.log(`  - ${model.id}: ${model.name}`);
   }
-  const configPath = join(homedir(), ".config/opencode/opencode.json");
-  if (!existsSync(configPath)) {
+  const configPath = join3(homedir2(), ".config/opencode/opencode.json");
+  if (!existsSync2(configPath)) {
     console.error(`Config not found: ${configPath}`);
     process.exit(1);
   }
